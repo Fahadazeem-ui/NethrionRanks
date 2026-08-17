@@ -2,6 +2,7 @@ package com.nethrion.ranks;
 
 import com.nethrion.ranks.commands.BaseCommand;
 import com.nethrion.ranks.commands.RankCommand;
+import com.nethrion.ranks.commands.RankDuelCommand;
 import com.nethrion.ranks.commands.SkillsCommand;
 import com.nethrion.ranks.listeners.BaseListener;
 import com.nethrion.ranks.managers.BaseManager;
@@ -25,6 +26,7 @@ public final class Main extends JavaPlugin {
         getCommand("rank").setExecutor(new RankCommand(rankManager));
         getCommand("skills").setExecutor(new SkillsCommand(rankManager));
         getCommand("base").setExecutor(new BaseCommand(baseManager));
+        getCommand("rankduel").setExecutor(new RankDuelCommand(rankManager));
 
         // Listeners register karna
         getServer().getPluginManager().registerEvents(new BaseListener(baseManager), this);

@@ -1,14 +1,42 @@
 package com.nethrion.ranks.rank;
 
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 
 /**
- * Weapon Material -> Skill mapping, aur har skill ka minimum duel-duration.
- * NOTE: Minecraft mein "Spear" naam ka koi item nahi hota — Trident ko
- * Spear ka substitute maana gaya hai (SpearMace skill).
+ * Weapon detection: pehle custom NBT tag check karta hai (jaise Spear —
+ * jo dikhta Iron Hoe/Stick jaisa hai lekin tagged "SPEAR" hai), warna
+ * normal vanilla Material se skill nikalta hai (sword/axe/mace/bow).
  */
 public class WeaponUtil {
 
+    // Yeh key custom weapons (Phase 4) pe lagayi jayegi taake unki asal
+    // skill pehchani ja sake, chahe unka Minecraft item type kuch bhi ho.
+    public static final NamespacedKey WEAPON_TYPE_KEY = new NamespacedKey("nethrionranks", "weapon_type");
+
+    // ItemStack se skill detect karna — pehle custom tag check, phir vanilla material
+    public static Skill fromItemStack(ItemStack item) {
+        if (item == null) return null;
+
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            String tag = meta.getPersistentDataContainer().get(WEAPON_TYPE_KEY, PersistentDataType.STRING);
+            if (tag != null) {
+                try {
+                    return Skill.valueOf(tag);
+                } catch (IllegalArgumentException ignored) {
+                    // Ghalat/corrupt tag ho to vanilla detection pe fallback karo
+                }
+            }
+        }
+
+        return fromMaterial(item.getType());
+    }
+
+    // Sirf vanilla Minecraft materials ke liye (Spear iska hissa nahi — woh sirf custom-tagged item se aati hai)
     public static Skill fromMaterial(Material material) {
         if (material == null) return null;
         String name = material.name();
@@ -16,10 +44,9 @@ public class WeaponUtil {
         if (name.endsWith("_SWORD")) return Skill.SWORD;
         if (name.endsWith("_AXE")) return Skill.AXE;
         if (material == Material.MACE) return Skill.MACE;
-        if (material == Material.TRIDENT) return Skill.SPEARMACE;
         if (material == Material.BOW || material == Material.CROSSBOW) return Skill.BOW;
 
-        return null; // koi tracked weapon nahi (khaali haath, ya koi aur item)
+        return null; // koi tracked weapon nahi
     }
 
     public static long getMinDurationMillis(Skill skill) {

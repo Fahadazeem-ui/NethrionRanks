@@ -12,7 +12,6 @@ import org.bukkit.entity.Arrow;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.SpectralArrow;
-import org.bukkit.entity.Trident;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
@@ -58,12 +57,13 @@ public class DuelListener implements Listener {
         return null;
     }
 
-    // Kaunsi skill use hui — projectile type ya haath mein pakri item se
+    // Kaunsi skill use hui — projectile ho to Bow, warna haath mein pakri item se
+    // (Spear yahan automatically detect ho jayegi, kyunki fromItemStack pehle
+    // custom NBT tag check karta hai, chahe item dikhta Iron Hoe/Stick jaisa ho)
     private Skill resolveSkillUsed(EntityDamageByEntityEvent event, Player attacker) {
         if (event.getDamager() instanceof Arrow || event.getDamager() instanceof SpectralArrow) return Skill.BOW;
-        if (event.getDamager() instanceof Trident) return Skill.SPEARMACE;
         if (event.getDamager() instanceof Player) {
-            return WeaponUtil.fromMaterial(attacker.getInventory().getItemInMainHand().getType());
+            return WeaponUtil.fromItemStack(attacker.getInventory().getItemInMainHand());
         }
         return null;
     }

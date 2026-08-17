@@ -1,0 +1,9 @@
+name: NethrionRanks
+version: '${version}'
+main: com.nethrion.ranks.Main
+api-version: '1.21'
+author: Nethrion
+description: Rank, Skills, Base Protection and RankDuel system for Nethrion SMP
+softdepend: [PlaceholderAPI]
+
+commands: {}

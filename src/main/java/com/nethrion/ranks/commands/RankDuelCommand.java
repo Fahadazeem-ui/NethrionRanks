@@ -1,6 +1,9 @@
 package com.nethrion.ranks.commands;
 
-import com.nethrion.ranks.managers.RankManager;
+import com.nethrion.ranks.rank.DuelManager;
+import com.nethrion.ranks.rank.RankLadderManager;
+import com.nethrion.ranks.rank.RankTier;
+import com.nethrion.ranks.rank.Skill;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
@@ -8,19 +11,14 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
-
 public class RankDuelCommand implements CommandExecutor {
 
-    private final RankManager rankManager;
+    private final DuelManager duelManager;
+    private final RankLadderManager rankLadderManager;
 
-    // Target UUID -> Challenger UUID. Non-persistent hai — server restart hote hi khaali ho jayega.
-    private final Map<UUID, UUID> pendingDuels = new HashMap<>();
-
-    public RankDuelCommand(RankManager rankManager) {
-        this.rankManager = rankManager;
+    public RankDuelCommand(DuelManager duelManager, RankLadderManager rankLadderManager) {
+        this.duelManager = duelManager;
+        this.rankLadderManager = rankLadderManager;
     }
 
     @Override
@@ -46,32 +44,48 @@ public class RankDuelCommand implements CommandExecutor {
         return true;
     }
 
-    // /rankduel <playername> — challenge bhejna
     private void handleChallenge(Player challenger, String targetName) {
         Player target = Bukkit.getPlayerExact(targetName);
 
         if (target == null || !target.isOnline()) {
-            challenger.sendMessage(ChatColor.RED + "Player '" + targetName + "' online nahi hai.");
+            challenger.sendMessage(ChatColor.RED + "Player online nahi hai.");
             return;
         }
-
         if (target.getUniqueId().equals(challenger.getUniqueId())) {
-            challenger.sendMessage(ChatColor.RED + "Tum khud ko duel challenge nahi kar sakte!");
+            challenger.sendMessage(ChatColor.RED + "Khud ko challenge nahi kar sakte!");
+            return;
+        }
+        if (duelManager.isInActiveDuel(challenger.getUniqueId()) || duelManager.isInActiveDuel(target.getUniqueId())) {
+            challenger.sendMessage(ChatColor.RED + "Tum ya woh player pehle se ek duel mein hain.");
             return;
         }
 
-        pendingDuels.put(target.getUniqueId(), challenger.getUniqueId());
+        // Cross-skill eligibility: sirf same-tier ya National ke against allowed
+        if (rankLadderManager.hasSkill(challenger.getUniqueId()) && rankLadderManager.hasSkill(target.getUniqueId())) {
+            Skill challengerSkill = rankLadderManager.getSkill(challenger.getUniqueId());
+            Skill targetSkill = rankLadderManager.getSkill(target.getUniqueId());
 
-        String challengerRank = rankManager.getRank(challenger.getUniqueId());
+            if (challengerSkill != targetSkill) {
+                RankTier challengerTier = rankLadderManager.getTier(challenger.getUniqueId());
+                RankTier targetTier = rankLadderManager.getTier(target.getUniqueId());
+                boolean nationalInvolved = challengerTier == RankTier.NATIONAL || targetTier == RankTier.NATIONAL;
 
-        challenger.sendMessage(ChatColor.GREEN + "Duel challenge bhej diya " + target.getName() + " ko!");
-        target.sendMessage(ChatColor.GOLD + challenger.getName() + " (" + challengerRank + ") " +
-                ChatColor.YELLOW + "ne tumhe duel ke liye challenge kiya hai!");
-        target.sendMessage(ChatColor.GRAY + "Accept karne ke liye: " + ChatColor.WHITE +
-                "/rankduel accept " + challenger.getName());
+                if (challengerTier != targetTier && !nationalInvolved) {
+                    challenger.sendMessage(ChatColor.RED + "Cross-skill duel sirf same rank-tier ke beech allowed hai (ya National ke khilaf).");
+                    return;
+                }
+            }
+        }
+
+        duelManager.sendInvite(challenger, target);
+
+        challenger.sendMessage(ChatColor.GREEN + "Duel invite bhej diya " + target.getName() + " ko! (60 sec mein expire hoga)");
+        target.sendMessage(ChatColor.GOLD + "" + ChatColor.BOLD + challenger.getName() +
+                ChatColor.YELLOW + " ne tumhe duel ke liye challenge kiya hai!");
+        target.sendMessage(ChatColor.GRAY + "Accept karne ke liye: " + ChatColor.WHITE + "/rankduel accept " + challenger.getName());
+        target.sendMessage(ChatColor.DARK_GRAY + "" + ChatColor.ITALIC + "prove it in the arena, not the chat. (60s to respond)");
     }
 
-    // /rankduel accept <playername> — challenge accept karna
     private void handleAccept(Player acceptor, String[] args) {
         if (args.length < 2) {
             acceptor.sendMessage(ChatColor.YELLOW + "Usage: /rankduel accept <player>");
@@ -82,37 +96,23 @@ public class RankDuelCommand implements CommandExecutor {
         Player challenger = Bukkit.getPlayerExact(challengerName);
 
         if (challenger == null || !challenger.isOnline()) {
-            acceptor.sendMessage(ChatColor.RED + "Player '" + challengerName + "' online nahi hai.");
+            acceptor.sendMessage(ChatColor.RED + "Player online nahi hai.");
             return;
         }
 
-        UUID storedChallengerUUID = pendingDuels.get(acceptor.getUniqueId());
-
-        if (storedChallengerUUID == null || !storedChallengerUUID.equals(challenger.getUniqueId())) {
+        if (!duelManager.hasPendingInviteFrom(acceptor.getUniqueId(), challenger.getUniqueId())) {
             acceptor.sendMessage(ChatColor.RED + challengerName + " se koi pending invite nahi hai.");
             return;
         }
 
-        // Valid hai — entry clear karo aur duel start karo
-        pendingDuels.remove(acceptor.getUniqueId());
-        startDuel(challenger, acceptor);
-    }
+        duelManager.clearInvite(acceptor.getUniqueId());
+        duelManager.startSession(challenger.getUniqueId(), acceptor.getUniqueId());
 
-    // Duel initialization — dono players ko ready karna aur announce karna
-    private void startDuel(Player challenger, Player acceptor) {
-        challenger.sendMessage(ChatColor.GREEN + acceptor.getName() + " ne tumhara duel accept kar liya!");
-        acceptor.sendMessage(ChatColor.GREEN + "Tumne " + challenger.getName() + " ka duel accept kar liya!");
+        String title = ChatColor.RED + "" + ChatColor.BOLD + "Duel Started!";
+        challenger.sendTitle(title, ChatColor.GRAY + "Fight fair. Good luck.", 10, 40, 10);
+        acceptor.sendTitle(title, ChatColor.GRAY + "Fight fair. Good luck.", 10, 40, 10);
 
-        // Dono players ko fresh state dena
-        challenger.setHealth(20.0);
-        challenger.setFoodLevel(20);
-        acceptor.setHealth(20.0);
-        acceptor.setFoodLevel(20);
-
-        // Challenger ko acceptor ke pass teleport karna taake duel start ho sake
-        challenger.teleport(acceptor.getLocation());
-
-        challenger.sendTitle(ChatColor.RED + "Duel Started!", ChatColor.GRAY + "Good luck!", 10, 40, 10);
-        acceptor.sendTitle(ChatColor.RED + "Duel Started!", ChatColor.GRAY + "Good luck!", 10, 40, 10);
+        challenger.sendMessage(ChatColor.GREEN + acceptor.getName() + " ne duel accept kar liya! Fight shuru.");
+        acceptor.sendMessage(ChatColor.GREEN + "Tumne " + challenger.getName() + " ka duel accept kar liya! Fight shuru.");
     }
 }

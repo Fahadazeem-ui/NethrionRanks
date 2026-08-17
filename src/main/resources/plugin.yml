@@ -6,4 +6,11 @@ author: Nethrion
 description: Rank, Skills, Base Protection and RankDuel system for Nethrion SMP
 softdepend: [PlaceholderAPI]
 
-commands: {}
+commands:
+  rank:
+    description: Apna current rank aur ladder progression dekho
+    usage: /rank
+  skills:
+    description: Apne skill stats aur levels dekho
+    usage: /skills
+

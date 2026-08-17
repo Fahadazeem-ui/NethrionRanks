@@ -7,12 +7,14 @@ import com.nethrion.ranks.commands.SkillsCommand;
 import com.nethrion.ranks.listeners.BaseListener;
 import com.nethrion.ranks.managers.BaseManager;
 import com.nethrion.ranks.managers.RankManager;
+import com.nethrion.ranks.rank.RankLadderManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class Main extends JavaPlugin {
 
     private RankManager rankManager;
     private BaseManager baseManager;
+    private RankLadderManager rankLadderManager; // Phase 1: naya rank-ladder engine
 
     @Override
     public void onEnable() {
@@ -21,6 +23,7 @@ public final class Main extends JavaPlugin {
         // Managers create karna
         this.rankManager = new RankManager(this);
         this.baseManager = new BaseManager(this);
+        this.rankLadderManager = new RankLadderManager(this);
 
         // Commands register karna
         getCommand("rank").setExecutor(new RankCommand(rankManager));

@@ -13,4 +13,7 @@ commands:
   skills:
     description: Apne skill stats aur levels dekho
     usage: /skills
+  base:
+    description: Apna base set karo aur uski activity logs dekho
+    usage: /base <set|logs> [time]
 

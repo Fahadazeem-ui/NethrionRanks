@@ -1,22 +1,24 @@
-name: NethrionRanks
-version: '${version}'
-main: com.nethrion.ranks.Main
+name: MythicInvasion
+
+version: 0.1.0-SNAPSHOT
+
+main: io.github.mindzard.mythicinvasion.MythicInvasionPlugin
+
+description: AI-powered dynamic mythic invasion and ecosystem engine
+
+author: MindZard
+
 api-version: '1.21'
-author: Nethrion
-description: Rank, Skills, Base Protection and RankDuel system for Nethrion SMP
-softdepend: [PlaceholderAPI]
+
+folia-supported: false
 
 commands:
-  rank:
-    description: Apna current rank aur ladder progression dekho
-    usage: /rank
-  skills:
-    description: Apne skill stats aur levels dekho
-    usage: /skills
-  base:
-    description: Apna base set karo aur uski activity logs dekho
-    usage: /base <set|logs> [time]
-  rankduel:
-    description: Kisi player ko 1v1 duel ke liye challenge karo
-    usage: /rankduel <player> | /rankduel accept <player>
+  society:
+    description: Shows the current MythicInvasion society state.
+    usage: /society
+    permission: mythicinvasion.debug.society
 
+permissions:
+  mythicinvasion.debug.society:
+    description: Allows access to MythicInvasion society debug information.
+    default: op

@@ -68,6 +68,27 @@ public class SpearListener implements Listener {
         } finally {
             customDamage.remove(hit.getUniqueId());
         }
+
+        applyLunge(player, item);
+    }
+
+    /**
+     * "Lunge" is a custom effect (no real Minecraft enchantment by
+     * that name): a sprinting hit with a Lunge-tagged Spear gives
+     * the attacker a forward dash toward their target.
+     */
+    private void applyLunge(Player player, ItemStack item) {
+        int level = WeaponUtil.getLungeLevel(item);
+        if (level <= 0 || !player.isSprinting()) return;
+
+        org.bukkit.util.Vector direction =
+                player.getLocation().getDirection().normalize();
+
+        double horizontal = 0.3 + (level * 0.05);
+
+        player.setVelocity(
+                direction.multiply(horizontal).setY(0.15)
+        );
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)

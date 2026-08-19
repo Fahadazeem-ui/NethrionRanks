@@ -12,9 +12,11 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
-import org.bukkit.event.player.PlayerSwapHandItemsEvent;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.ArrayList;
@@ -23,6 +25,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Locks National weapons to their holder: they can be freely moved
+ * around within the holder's own inventory (any slot, offhand
+ * included), but can never leave it - no dropping, no placing into
+ * a chest/ender chest/shulker/other container, and no dropping on
+ * death. A National weapon only ever leaves a player's hands when
+ * a ranked duel takes their National rank away, in which case it
+ * simply vanishes (see onRespawn) and the new National is granted
+ * a brand new copy via RankLadderManager.
+ */
 public class NationalWeaponListener implements Listener {
 
     private final RankLadderManager ladder;
@@ -49,20 +61,6 @@ public class NationalWeaponListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
-    public void onSwap(PlayerSwapHandItemsEvent event) {
-        if (
-                WeaponUtil.isLockedWeapon(
-                        event.getMainHandItem()
-                ) ||
-                WeaponUtil.isLockedWeapon(
-                        event.getOffHandItem()
-                )
-        ) {
-            event.setCancelled(true);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST)
     public void onClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player)) {
             return;
@@ -74,15 +72,43 @@ public class NationalWeaponListener implements Listener {
         ItemStack cursor =
                 event.getCursor();
 
-        if (
+        boolean involvesLocked =
                 WeaponUtil.isLockedWeapon(current) ||
-                        WeaponUtil.isLockedWeapon(cursor)
-        ) {
+                        WeaponUtil.isLockedWeapon(cursor);
+
+        if (!involvesLocked) {
+            return;
+        }
+
+        InventoryView view =
+                event.getView();
+
+        if (!isExternalContainerOpen(view)) {
             /*
-             * A locked National weapon may be used from its existing
-             * inventory slot, but it cannot be picked up, moved,
-             * shifted, swapped or placed into another inventory.
+             * Only the holder's own inventory/crafting screen is
+             * open - freely allow rearranging slots, hotbar swaps,
+             * armor/offhand placement, all of it.
              */
+            return;
+        }
+
+        Inventory clicked =
+                event.getClickedInventory();
+
+        boolean targetingContainer =
+                clicked != null &&
+                        clicked.equals(
+                                view.getTopInventory()
+                        );
+
+        boolean shiftingIntoContainer =
+                event.isShiftClick() &&
+                        clicked != null &&
+                        clicked.equals(
+                                view.getBottomInventory()
+                        );
+
+        if (targetingContainer || shiftingIntoContainer) {
             event.setCancelled(true);
         }
     }
@@ -90,12 +116,46 @@ public class NationalWeaponListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onDrag(InventoryDragEvent event) {
         if (
-                WeaponUtil.isLockedWeapon(
+                !WeaponUtil.isLockedWeapon(
                         event.getOldCursor()
                 )
         ) {
-            event.setCancelled(true);
+            return;
         }
+
+        InventoryView view =
+                event.getView();
+
+        if (!isExternalContainerOpen(view)) {
+            return;
+        }
+
+        int topSize =
+                view.getTopInventory().getSize();
+
+        for (int rawSlot : event.getRawSlots()) {
+            if (rawSlot < topSize) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+    }
+
+    /**
+     * True once any inventory other than the player's own
+     * inventory/crafting screen is open (a chest, ender chest,
+     * shulker box, barrel, etc.) - the only situation a National
+     * weapon needs to be kept out of.
+     */
+    private boolean isExternalContainerOpen(
+            InventoryView view) {
+
+        InventoryType type =
+                view.getTopInventory().getType();
+
+        return type != InventoryType.CRAFTING &&
+                type != InventoryType.PLAYER &&
+                type != InventoryType.CREATIVE;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -150,10 +210,35 @@ public class NationalWeaponListener implements Listener {
                             restore != null &&
                                     !restore.isEmpty()
                     ) {
+                        RankTier currentTier =
+                                ladder.getTier(uuid);
+
+                        Skill currentSkill =
+                                ladder.getSkill(uuid);
+
                         for (ItemStack item : restore) {
-                            player.getInventory().addItem(
-                                    item
-                            );
+                            /*
+                             * A resolved ranked duel loss takes the
+                             * National rank (and skill) away before
+                             * this ever runs. Only restore the item
+                             * if the player is still National in the
+                             * exact skill that weapon belongs to -
+                             * otherwise it stays gone for good, and
+                             * the new National already received a
+                             * brand new copy.
+                             */
+                            Skill itemSkill =
+                                    WeaponUtil.getTaggedSkill(item);
+
+                            if (
+                                    currentTier == RankTier.NATIONAL &&
+                                            itemSkill != null &&
+                                            itemSkill == currentSkill
+                            ) {
+                                player.getInventory().addItem(
+                                        item
+                                );
+                            }
                         }
                     }
 

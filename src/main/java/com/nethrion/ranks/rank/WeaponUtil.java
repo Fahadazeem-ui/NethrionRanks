@@ -39,6 +39,32 @@ public final class WeaponUtil {
                     "admin_weapon"
             );
 
+    /**
+     * Distinguishes the two physical pieces a SPEARMACE rank holds
+     * ("SPEAR" or "MACE"). Null/absent for every other skill, which
+     * only ever has a single physical weapon.
+     */
+    public static final NamespacedKey WEAPON_ROLE_KEY =
+            new NamespacedKey(
+                    "nethrionranks",
+                    "weapon_role"
+            );
+
+    /**
+     * Custom "Lunge" level. There is no real registered Minecraft
+     * enchantment called Lunge, so it is represented as a tagged
+     * level plus a lore line, and SpearListener reads this tag to
+     * apply an actual forward-dash effect on hit.
+     */
+    public static final NamespacedKey LUNGE_KEY =
+            new NamespacedKey(
+                    "nethrionranks",
+                    "lunge_level"
+            );
+
+    public static final String ROLE_SPEAR = "SPEAR";
+    public static final String ROLE_MACE = "MACE";
+
     private WeaponUtil() {
     }
 
@@ -112,7 +138,8 @@ public final class WeaponUtil {
             ItemStack item) {
 
         return fromItemStack(item) ==
-                Skill.SPEARMACE;
+                Skill.SPEARMACE &&
+                !ROLE_MACE.equals(getRole(item));
     }
 
     public static boolean isNamedSpear(
@@ -150,9 +177,8 @@ public final class WeaponUtil {
                 (
                         display != null &&
                                 ChatColor.stripColor(display)
-                                        .equalsIgnoreCase(
-                                                "Spear"
-                                        )
+                                        .toLowerCase()
+                                        .contains("spear")
                 );
     }
 
@@ -179,6 +205,41 @@ public final class WeaponUtil {
             ItemStack item) {
 
         return isNationalWeapon(item);
+    }
+
+    public static String getRole(
+            ItemStack item) {
+
+        if (item == null) return null;
+
+        ItemMeta meta =
+                item.getItemMeta();
+
+        if (meta == null) return null;
+
+        return meta.getPersistentDataContainer().get(
+                WEAPON_ROLE_KEY,
+                PersistentDataType.STRING
+        );
+    }
+
+    public static int getLungeLevel(
+            ItemStack item) {
+
+        if (item == null) return 0;
+
+        ItemMeta meta =
+                item.getItemMeta();
+
+        if (meta == null) return 0;
+
+        Integer level =
+                meta.getPersistentDataContainer().get(
+                        LUNGE_KEY,
+                        PersistentDataType.INTEGER
+                );
+
+        return level == null ? 0 : level;
     }
 
     public static Skill getTaggedSkill(
@@ -254,6 +315,12 @@ public final class WeaponUtil {
         );
     }
 
+    /**
+     * Builds the single physical weapon for every skill except
+     * SPEARMACE (which is represented by two pieces, see
+     * {@link #createRankWeaponSet}). For SPEARMACE this returns
+     * only the Spear piece, kept for backward-compatible callers.
+     */
     public static ItemStack createRankWeapon(
             Skill skill,
             RankTier tier,
@@ -267,6 +334,10 @@ public final class WeaponUtil {
             tier = RankTier.E;
         }
 
+        if (skill == Skill.SPEARMACE) {
+            return createSpearPiece(tier, locked);
+        }
+
         Material material =
                 switch (skill) {
                     case SWORD -> Material.DIAMOND_SWORD;
@@ -275,6 +346,134 @@ public final class WeaponUtil {
                     case SPEARMACE -> Material.IRON_HOE;
                     case BOW -> Material.BOW;
                 };
+
+        ItemStack item =
+                buildWeaponPiece(
+                        material,
+                        skill,
+                        tier,
+                        locked,
+                        null,
+                        skill.getMasterTitle()
+                );
+
+        applyEnchantments(
+                item,
+                skill,
+                null,
+                tier
+        );
+
+        return item;
+    }
+
+    /**
+     * Builds the full physical loadout for a skill/tier combo.
+     * Every skill returns exactly one weapon, except SPEARMACE,
+     * which returns two independent pieces (a Spear and a Mace),
+     * each individually national-locked and enchanted.
+     */
+    public static List<ItemStack> createRankWeaponSet(
+            Skill skill,
+            RankTier tier) {
+
+        return createRankWeaponSet(
+                skill,
+                tier,
+                tier == RankTier.NATIONAL
+        );
+    }
+
+    public static List<ItemStack> createRankWeaponSet(
+            Skill skill,
+            RankTier tier,
+            boolean locked) {
+
+        List<ItemStack> items =
+                new ArrayList<>();
+
+        if (skill == Skill.SPEARMACE) {
+            items.add(
+                    createSpearPiece(
+                            tier,
+                            locked
+                    )
+            );
+            items.add(
+                    createMacePiece(
+                            tier,
+                            locked
+                    )
+            );
+            return items;
+        }
+
+        items.add(
+                createRankWeapon(
+                        skill,
+                        tier,
+                        locked
+                )
+        );
+
+        return items;
+    }
+
+    private static ItemStack createSpearPiece(
+            RankTier tier,
+            boolean locked) {
+
+        ItemStack item =
+                buildWeaponPiece(
+                        Material.IRON_HOE,
+                        Skill.SPEARMACE,
+                        tier,
+                        locked,
+                        ROLE_SPEAR,
+                        "SpearMaster"
+                );
+
+        applyEnchantments(
+                item,
+                Skill.SPEARMACE,
+                ROLE_SPEAR,
+                tier
+        );
+
+        return item;
+    }
+
+    private static ItemStack createMacePiece(
+            RankTier tier,
+            boolean locked) {
+
+        ItemStack item =
+                buildWeaponPiece(
+                        Material.MACE,
+                        Skill.SPEARMACE,
+                        tier,
+                        locked,
+                        ROLE_MACE,
+                        "MaceMaster"
+                );
+
+        applyEnchantments(
+                item,
+                Skill.SPEARMACE,
+                ROLE_MACE,
+                tier
+        );
+
+        return item;
+    }
+
+    private static ItemStack buildWeaponPiece(
+            Material material,
+            Skill skill,
+            RankTier tier,
+            boolean locked,
+            String role,
+            String titleSuffix) {
 
         ItemStack item =
                 new ItemStack(material);
@@ -289,7 +488,7 @@ public final class WeaponUtil {
         String title =
                 tier.getDisplayName() +
                         " " +
-                        skill.getMasterTitle();
+                        titleSuffix;
 
         ChatColor color =
                 tierColor(tier);
@@ -345,6 +544,14 @@ public final class WeaponUtil {
                 tier.name()
         );
 
+        if (role != null) {
+            pdc.set(
+                    WEAPON_ROLE_KEY,
+                    PersistentDataType.STRING,
+                    role
+            );
+        }
+
         if (locked) {
             pdc.set(
                     NATIONAL_WEAPON_KEY,
@@ -353,19 +560,154 @@ public final class WeaponUtil {
             );
         }
 
-        applyBalancedEnchantments(
-                item,
-                skill,
-                tier
-        );
-
         item.setItemMeta(meta);
         return item;
     }
 
-    private static void applyBalancedEnchantments(
+    private static void applyEnchantments(
             ItemStack item,
             Skill skill,
+            String role,
+            RankTier tier) {
+
+        if (tier == RankTier.NATIONAL) {
+            applyNationalEnchantments(
+                    item,
+                    skill,
+                    role
+            );
+            return;
+        }
+
+        applyScaledEnchantments(
+                item,
+                skill,
+                role,
+                tier
+        );
+    }
+
+    /**
+     * Fixed enchantment table for every NATIONAL-tier weapon, as
+     * specified by the rank design (not scaled by tier).
+     */
+    private static void applyNationalEnchantments(
+            ItemStack item,
+            Skill skill,
+            String role) {
+
+        if (skill == Skill.SPEARMACE && ROLE_MACE.equals(role)) {
+            add(item, Enchantment.DENSITY, 6);
+            add(item, Enchantment.BREACH, 4);
+            add(item, Enchantment.WIND_BURST, 2);
+            add(item, Enchantment.UNBREAKING, 4);
+            add(item, Enchantment.MENDING, 4);
+            return;
+        }
+
+        if (skill == Skill.SPEARMACE && ROLE_SPEAR.equals(role)) {
+            add(item, Enchantment.FIRE_ASPECT, 2);
+            add(item, Enchantment.KNOCKBACK, 3);
+            add(item, Enchantment.UNBREAKING, 4);
+            add(item, Enchantment.MENDING, 4);
+            applyLunge(item, 4);
+            return;
+        }
+
+        switch (skill) {
+            case SWORD -> {
+                add(item, Enchantment.SHARPNESS, 6);
+                add(item, Enchantment.FIRE_ASPECT, 3);
+                add(item, Enchantment.KNOCKBACK, 2);
+                add(item, Enchantment.UNBREAKING, 4);
+                add(item, Enchantment.MENDING, 4);
+                add(item, Enchantment.LOOTING, 4);
+            }
+
+            case AXE -> {
+                add(item, Enchantment.SHARPNESS, 6);
+                add(item, Enchantment.EFFICIENCY, 6);
+                add(item, Enchantment.UNBREAKING, 4);
+                add(item, Enchantment.MENDING, 4);
+            }
+
+            case MACE -> {
+                add(item, Enchantment.DENSITY, 6);
+                add(item, Enchantment.BREACH, 4);
+                add(item, Enchantment.WIND_BURST, 2);
+                add(item, Enchantment.UNBREAKING, 4);
+                add(item, Enchantment.MENDING, 4);
+            }
+
+            case BOW -> {
+                add(item, Enchantment.POWER, 6);
+                add(item, Enchantment.FLAME, 2);
+                add(item, Enchantment.PUNCH, 3);
+                add(item, Enchantment.INFINITY, 1);
+                add(item, Enchantment.MENDING, 4);
+                add(item, Enchantment.UNBREAKING, 4);
+            }
+
+            default -> {
+                // SPEARMACE handled above via role.
+            }
+        }
+    }
+
+    /**
+     * Applies a light "Lunge" tag: a PDC level SpearListener reads
+     * to trigger an actual forward-dash on hit, plus a lore line so
+     * it visually reads like the item's other enchantments. There is
+     * no real registered Minecraft enchantment named Lunge.
+     */
+    private static void applyLunge(
+            ItemStack item,
+            int level) {
+
+        ItemMeta meta =
+                item.getItemMeta();
+
+        if (meta == null) return;
+
+        meta.getPersistentDataContainer().set(
+                LUNGE_KEY,
+                PersistentDataType.INTEGER,
+                level
+        );
+
+        List<String> lore =
+                meta.hasLore() && meta.getLore() != null
+                        ? new ArrayList<>(meta.getLore())
+                        : new ArrayList<>();
+
+        String numeral =
+                switch (level) {
+                    case 1 -> "I";
+                    case 2 -> "II";
+                    case 3 -> "III";
+                    case 5 -> "V";
+                    case 6 -> "VI";
+                    default -> "IV";
+                };
+
+        lore.add(
+                ChatColor.GRAY +
+                        "Lunge " +
+                        numeral
+        );
+
+        meta.setLore(lore);
+        item.setItemMeta(meta);
+    }
+
+    /**
+     * Previous tier-scaled enchantment behaviour, kept for every
+     * tier below NATIONAL.
+     */
+    private static void applyScaledEnchantments(
+            ItemStack item,
+            Skill skill,
+            String role,
             RankTier tier) {
 
         int scale =
@@ -377,6 +719,14 @@ public final class WeaponUtil {
                     case A, S, NATIONAL -> 6;
                     case CIVILLIAN -> 1;
                 };
+
+        if (skill == Skill.SPEARMACE && ROLE_MACE.equals(role)) {
+            add(item, Enchantment.DENSITY, scale);
+            add(item, Enchantment.UNBREAKING, scale);
+            add(item, Enchantment.MENDING, 1);
+            add(item, Enchantment.BREACH, Math.min(2, scale));
+            return;
+        }
 
         switch (skill) {
             case SWORD -> {
@@ -398,16 +748,14 @@ public final class WeaponUtil {
             }
 
             case MACE -> {
-                add(item, Enchantment.SHARPNESS, scale);
+                add(item, Enchantment.DENSITY, scale);
                 add(item, Enchantment.UNBREAKING, scale);
                 add(item, Enchantment.MENDING, 1);
-                add(item, Enchantment.FIRE_ASPECT, Math.min(2, scale));
-                add(item, Enchantment.KNOCKBACK, Math.min(2, scale));
-                add(item, Enchantment.SMITE, scale);
+                add(item, Enchantment.BREACH, Math.min(2, scale));
             }
 
             case SPEARMACE -> {
-                add(item, Enchantment.SHARPNESS, scale);
+                // Spear piece at sub-National tiers.
                 add(item, Enchantment.UNBREAKING, scale);
                 add(item, Enchantment.MENDING, 1);
                 add(item, Enchantment.FIRE_ASPECT, Math.min(2, scale));

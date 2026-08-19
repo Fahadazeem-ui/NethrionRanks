@@ -14,7 +14,7 @@ permissions:
 commands:
   rank:
     description: Current rank, progression, ladder and admin tools
-    usage: /rank | /rank list | /rank help | /rank set <player> <tier> [skill] | /rank giveweapon <player> <skill> <tier>
+    usage: /rank | /rank list | /rank help | /rank set <player> <tier> [skill] | /rank giveweapon <player> <skill> <tier> | /rank removeweapon <player> [skill]
 
   skills:
     description: Permanent combat mastery and leaders

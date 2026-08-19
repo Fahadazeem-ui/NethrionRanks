@@ -63,6 +63,9 @@ public class RankCommand
             case "giveweapon" ->
                     handleGiveWeapon(sender, args);
 
+            case "removeweapon" ->
+                    handleRemoveWeapon(sender, args);
+
             default ->
                     sendHelp(sender);
         }
@@ -279,6 +282,11 @@ public class RankCommand
             sender.sendMessage(
                     ChatColor.YELLOW +
                             "/rank giveweapon <player> <skill> <tier>"
+            );
+
+            sender.sendMessage(
+                    ChatColor.YELLOW +
+                            "/rank removeweapon <player> [skill]"
             );
         }
 
@@ -595,15 +603,17 @@ public class RankCommand
             return;
         }
 
-        ItemStack weapon =
-                WeaponUtil.createRankWeapon(
+        List<ItemStack> weapons =
+                WeaponUtil.createRankWeaponSet(
                         skill,
                         tier
                 );
 
-        target.getInventory().addItem(
-                weapon
-        );
+        for (ItemStack weapon : weapons) {
+            target.getInventory().addItem(
+                    weapon
+            );
+        }
 
         target.sendMessage(
                 ChatColor.GOLD +
@@ -611,12 +621,104 @@ public class RankCommand
                         ChatColor.WHITE +
                         tier.getDisplayName() +
                         " " +
-                        skill.getMasterTitle()
+                        skill.getMasterTitle() +
+                        (
+                                weapons.size() > 1
+                                        ? ChatColor.GRAY +
+                                        " (Spear + Mace)"
+                                        : ""
+                        )
         );
 
         sender.sendMessage(
                 ChatColor.GREEN +
                         "Weapon given to " +
+                        target.getName() +
+                        "."
+        );
+    }
+
+    private void handleRemoveWeapon(
+            CommandSender sender,
+            String[] args) {
+
+        if (
+                !sender.hasPermission(
+                        "nethrionranks.admin"
+                )
+        ) {
+            sender.sendMessage(
+                    ChatColor.RED +
+                            "No permission."
+            );
+            return;
+        }
+
+        if (
+                args.length < 2
+        ) {
+            sender.sendMessage(
+                    ChatColor.YELLOW +
+                            "Usage: /rank removeweapon <player> [skill]"
+            );
+            return;
+        }
+
+        Player target =
+                Bukkit.getPlayerExact(
+                        args[1]
+                );
+
+        if (target == null) {
+            sender.sendMessage(
+                    ChatColor.RED +
+                            "Player online nahi hai."
+            );
+            return;
+        }
+
+        Skill skill = null;
+
+        if (args.length >= 3) {
+            try {
+                skill =
+                        Skill.valueOf(
+                                args[2].toUpperCase(
+                                        Locale.ROOT
+                                )
+                        );
+            } catch (Exception exception) {
+                sender.sendMessage(
+                        ChatColor.RED +
+                                "Invalid skill."
+                );
+                return;
+            }
+        }
+
+        ladder.removeNationalWeapon(
+                target.getUniqueId(),
+                skill
+        );
+
+        String scope =
+                skill == null
+                        ? "all National weapons"
+                        : "National " +
+                        skill.getMasterTitle();
+
+        target.sendMessage(
+                ChatColor.GOLD +
+                        "Your " +
+                        scope +
+                        " were removed by an admin."
+        );
+
+        sender.sendMessage(
+                ChatColor.GREEN +
+                        "Removed " +
+                        scope +
+                        " from " +
                         target.getName() +
                         "."
         );
@@ -645,6 +747,7 @@ public class RankCommand
             ) {
                 values.add("set");
                 values.add("giveweapon");
+                values.add("removeweapon");
             }
 
             return filter(
@@ -661,6 +764,10 @@ public class RankCommand
                                         args[0]
                                                 .equalsIgnoreCase(
                                                         "giveweapon"
+                                                ) ||
+                                        args[0]
+                                                .equalsIgnoreCase(
+                                                        "removeweapon"
                                                 )
                         )
         ) {
@@ -703,8 +810,12 @@ public class RankCommand
 
         if (
                 args.length == 3 &&
-                        args[0]
-                                .equalsIgnoreCase("giveweapon")
+                        (
+                                args[0]
+                                        .equalsIgnoreCase("giveweapon") ||
+                                        args[0]
+                                                .equalsIgnoreCase("removeweapon")
+                        )
         ) {
             List<String> skills =
                     new ArrayList<>();

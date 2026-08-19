@@ -897,6 +897,10 @@ public class RankLadderManager {
                 );
                 persistProfile(loser);
 
+                ensureNationalWeapon(
+                        winnerUUID,
+                        winnerSkill
+                );
                 markNationalDuel(winnerUUID);
 
                 return new DuelResult(
@@ -1346,80 +1350,21 @@ public class RankLadderManager {
         return moved;
     }
 
+    /**
+     * A defeated National's old weapon(s) never survive the loss:
+     * they vanish from the loser entirely instead of dropping or
+     * being cloned across. The winner is always granted a brand
+     * new, full-durability National weapon separately via
+     * {@link #ensureNationalWeapon}, so this only needs to strip
+     * the loser clean.
+     */
     public void transferNationalWeapons(
             UUID fromUuid,
             UUID toUuid) {
 
-        Player from =
-                Bukkit.getPlayer(fromUuid);
-
-        Player to =
-                Bukkit.getPlayer(toUuid);
-
-        if (from == null || to == null) {
-            return;
-        }
-
-        List<ItemStack> weapons =
-                new ArrayList<>();
-
-        for (ItemStack item :
-                from.getInventory().getContents()) {
-            if (
-                    WeaponUtil.isNationalWeapon(item)
-            ) {
-                weapons.add(
-                        item.clone()
-                );
-            }
-        }
-
-        ItemStack offhand =
-                from.getInventory().getItemInOffHand();
-
-        if (
-                WeaponUtil.isNationalWeapon(
-                        offhand
-                )
-        ) {
-            weapons.add(
-                    offhand.clone()
-            );
-        }
-
-        if (weapons.isEmpty()) {
-            return;
-        }
-
         removeAllNationalWeapons(
-                from
+                fromUuid
         );
-
-        for (ItemStack item : weapons) {
-            Map<Integer, ItemStack> leftovers =
-                    to.getInventory().addItem(
-                            item
-                    );
-
-            if (!leftovers.isEmpty()) {
-                for (ItemStack leftover :
-                        leftovers.values()) {
-                    Map<Integer, ItemStack> enderLeftovers =
-                            to.getEnderChest()
-                                    .addItem(
-                                            leftover
-                                    );
-
-                    if (!enderLeftovers.isEmpty()) {
-                        plugin.getLogger().warning(
-                                "Unable to store transferred National weapon for " +
-                                        to.getName() +
-                                        "."
-                        );
-                    }
-                }
-            }
-        }
     }
 
     public void ensureNationalWeapon(
@@ -1436,44 +1381,74 @@ public class RankLadderManager {
             return;
         }
 
-        boolean exists = false;
-
-        for (ItemStack item :
-                player.getInventory().getContents()) {
-            if (
-                    WeaponUtil.isNationalWeapon(item) &&
-                            WeaponUtil.getTaggedSkill(item) ==
-                                    skill
-            ) {
-                exists = true;
-                break;
-            }
-        }
-
-        if (
-                !exists &&
-                        WeaponUtil.getTaggedSkill(
-                                player.getInventory()
-                                        .getItemInOffHand()
-                        ) == skill
-        ) {
-            exists = true;
-        }
-
-        if (exists) {
-            return;
-        }
-
-        ItemStack weapon =
-                WeaponUtil.createRankWeapon(
+        List<ItemStack> required =
+                WeaponUtil.createRankWeaponSet(
                         skill,
                         RankTier.NATIONAL,
                         true
                 );
 
+        for (ItemStack template : required) {
+            if (
+                    hasMatchingNationalWeapon(
+                            player,
+                            skill,
+                            WeaponUtil.getRole(template)
+                    )
+            ) {
+                continue;
+            }
+
+            grantItem(player, template);
+        }
+    }
+
+    private boolean hasMatchingNationalWeapon(
+            Player player,
+            Skill skill,
+            String role) {
+
+        for (ItemStack item :
+                player.getInventory().getContents()) {
+            if (matchesNationalWeapon(item, skill, role)) {
+                return true;
+            }
+        }
+
+        return matchesNationalWeapon(
+                player.getInventory().getItemInOffHand(),
+                skill,
+                role
+        );
+    }
+
+    private boolean matchesNationalWeapon(
+            ItemStack item,
+            Skill skill,
+            String role) {
+
+        if (!WeaponUtil.isNationalWeapon(item)) {
+            return false;
+        }
+
+        if (WeaponUtil.getTaggedSkill(item) != skill) {
+            return false;
+        }
+
+        if (role == null) {
+            return true;
+        }
+
+        return role.equals(WeaponUtil.getRole(item));
+    }
+
+    private void grantItem(
+            Player player,
+            ItemStack item) {
+
         Map<Integer, ItemStack> leftovers =
                 player.getInventory().addItem(
-                        weapon
+                        item
                 );
 
         if (!leftovers.isEmpty()) {
@@ -1497,6 +1472,60 @@ public class RankLadderManager {
         }
 
         removeAllNationalWeapons(player);
+    }
+
+    /**
+     * Removes a player's National weapon(s) for a specific skill
+     * (both pieces, for SPEARMACE), or every National weapon they
+     * hold when skill is null. Used by the admin cleanup command.
+     */
+    public void removeNationalWeapon(
+            UUID uuid,
+            Skill skill) {
+
+        Player player =
+                Bukkit.getPlayer(uuid);
+
+        if (player == null) {
+            return;
+        }
+
+        ItemStack[] contents =
+                player.getInventory().getContents();
+
+        for (int i = 0; i < contents.length; i++) {
+            if (
+                    WeaponUtil.isNationalWeapon(contents[i]) &&
+                            (
+                                    skill == null ||
+                                            WeaponUtil.getTaggedSkill(
+                                                    contents[i]
+                                            ) == skill
+                            )
+            ) {
+                contents[i] = null;
+            }
+        }
+
+        player.getInventory().setContents(
+                contents
+        );
+
+        ItemStack offhand =
+                player.getInventory().getItemInOffHand();
+
+        if (
+                WeaponUtil.isNationalWeapon(offhand) &&
+                        (
+                                skill == null ||
+                                        WeaponUtil.getTaggedSkill(offhand) ==
+                                                skill
+                        )
+        ) {
+            player.getInventory().setItemInOffHand(
+                    null
+            );
+        }
     }
 
     private void removeAllNationalWeapons(

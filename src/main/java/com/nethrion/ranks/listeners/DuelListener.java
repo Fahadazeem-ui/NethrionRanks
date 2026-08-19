@@ -24,7 +24,10 @@ import java.util.UUID;
 
 public class DuelListener implements Listener {
 
-    private static final long OUTLAW_DURATION_MILLIS = 30L * 60L * 1000L;
+    private static final long OUTLAW_DURATION_MILLIS =
+            3L * 60L * 1000L;
+
+    private static final int MAX_OUTLAW_RESETS = 3;
 
     private final DuelManager duelManager;
     private final RankLadderManager ladder;
@@ -40,6 +43,44 @@ public class DuelListener implements Listener {
 
         Player attacker = resolveAttacker(event);
         if (attacker == null) return;
+
+        if (
+                !attacker.getUniqueId().equals(
+                        victim.getUniqueId()
+                ) &&
+                ladder.getProfile(
+                        victim.getUniqueId()
+                ).isOutlaw()
+        ) {
+            PlayerRankProfile victimProfile =
+                    ladder.getProfile(
+                            victim.getUniqueId()
+                    );
+
+            if (
+                    ladder.refreshOutlawPenalty(
+                            victim.getUniqueId(),
+                            OUTLAW_DURATION_MILLIS,
+                            MAX_OUTLAW_RESETS
+                    )
+            ) {
+                ladder.refreshOnlineDisplay(
+                        victim.getUniqueId()
+                );
+
+                applyOutlawEffects(
+                        victim,
+                        victimProfile
+                );
+
+                victim.sendActionBar(
+                        ChatColor.RED +
+                                "Outlaw penalty refreshed: " +
+                                ChatColor.WHITE +
+                                "3:00"
+                );
+            }
+        }
 
         DuelSession session =
                 duelManager.getActiveSession(attacker.getUniqueId());
@@ -168,6 +209,18 @@ public class DuelListener implements Listener {
                         loserDominant
                 );
 
+        if (
+                result.getType() ==
+                        DuelResult.Type.VOID
+        ) {
+            voidMatch(
+                    killer,
+                    loser,
+                    "This duel combination is not allowed."
+            );
+            return;
+        }
+
         ladder.addKill(killer.getUniqueId());
 
         long winnerXp =
@@ -200,66 +253,208 @@ public class DuelListener implements Listener {
     }
 
     @EventHandler
-    public void onQuit(PlayerQuitEvent event) {
+    public void onQuit(
+            PlayerQuitEvent event) {
+
         DuelSession session =
-                duelManager.getActiveSession(event.getPlayer().getUniqueId());
+                duelManager.getActiveSession(
+                        event.getPlayer().getUniqueId()
+                );
 
-        if (session == null) return;
+        if (session == null) {
+            return;
+        }
 
-        UUID opponent = session.getOpponent(event.getPlayer().getUniqueId());
-        Player winner = Bukkit.getPlayer(opponent);
+        UUID leaver =
+                event.getPlayer().getUniqueId();
+
+        UUID opponent =
+                session.getOpponent(leaver);
+
+        Player winner =
+                Bukkit.getPlayer(opponent);
 
         duelManager.endSession(session);
 
-        if (winner != null) {
-            winner.sendTitle(
-                    ChatColor.GREEN + "DUEL WON",
-                    ChatColor.GRAY + "Opponent disconnected.",
-                    10, 50, 10
-            );
+        if (winner == null) {
+            return;
+        }
+
+        Skill winnerSkill =
+                session.getDominantSkill(
+                        winner.getUniqueId()
+                );
+
+        Skill loserSkill =
+                session.getDominantSkill(leaver);
+
+        if (
+                winnerSkill == null ||
+                        loserSkill == null
+        ) {
             winner.sendMessage(
-                    ChatColor.GREEN + "Ranked duel won because your opponent disconnected."
+                    ChatColor.GRAY +
+                            "Duel cancelled: no clear weapon dominance."
+            );
+            return;
+        }
+
+        long minimum =
+                Math.min(
+                        WeaponUtil.getMinDurationMillis(
+                                winnerSkill
+                        ),
+                        WeaponUtil.getMinDurationMillis(
+                                loserSkill
+                        )
+                );
+
+        if (
+                session.getElapsedMillis() <
+                        minimum
+        ) {
+            winner.sendMessage(
+                    ChatColor.GRAY +
+                            "Duel cancelled: minimum time was not reached."
+            );
+            return;
+        }
+
+        Skill lockedWinner =
+                ladder.getSkill(
+                        winner.getUniqueId()
+                );
+
+        Skill lockedLoser =
+                ladder.getSkill(
+                        leaver
+                );
+
+        if (
+                lockedWinner != null &&
+                        lockedWinner != winnerSkill
+        ) {
+            winner.sendMessage(
+                    ChatColor.GRAY +
+                            "Duel cancelled: your locked skill was violated."
+            );
+            return;
+        }
+
+        if (
+                lockedLoser != null &&
+                        lockedLoser != loserSkill
+        ) {
+            winner.sendMessage(
+                    ChatColor.GRAY +
+                            "Duel cancelled: opponent's locked skill was violated."
+            );
+            return;
+        }
+
+        if (lockedWinner == null) {
+            ladder.assignSkillIfAbsent(
+                    winner.getUniqueId(),
+                    winnerSkill
             );
         }
+
+        if (lockedLoser == null) {
+            ladder.assignSkillIfAbsent(
+                    leaver,
+                    loserSkill
+            );
+        }
+
+        DuelResult result =
+                ladder.resolveDuel(
+                        winner.getUniqueId(),
+                        winnerSkill,
+                        leaver,
+                        loserSkill
+                );
+
+        if (
+                result.getType() ==
+                        DuelResult.Type.VOID
+        ) {
+            return;
+        }
+
+        ladder.addKill(
+                winner.getUniqueId()
+        );
+
+        ladder.addSkillXp(
+                winner.getUniqueId(),
+                winnerSkill,
+                100L
+        );
+
+        ladder.addSkillXp(
+                leaver,
+                loserSkill,
+                50L
+        );
+
+        winner.sendTitle(
+                ChatColor.GREEN +
+                        "DUEL WON",
+                ChatColor.GRAY +
+                        "Opponent disconnected.",
+                10,
+                50,
+                10
+        );
+
+        winner.sendMessage(
+                ChatColor.GREEN +
+                        "Ranked duel resolved after opponent disconnected."
+        );
+
+        ladder.refreshOnlineDisplay(
+                winner.getUniqueId()
+        );
     }
 
-    private void applyInnocentKillPenalty(Player killer, Player victim) {
-        PlayerRankProfile profile =
-                ladder.getProfile(killer.getUniqueId());
+    private void applyInnocentKillPenalty(
+            Player killer,
+            Player victim) {
 
-        profile.addOutlawLevel(
-                1,
+        PlayerRankProfile profile =
+                ladder.getProfile(
+                        killer.getUniqueId()
+                );
+
+        ladder.startOutlawPenalty(
+                killer.getUniqueId(),
                 OUTLAW_DURATION_MILLIS
         );
 
-        killer.addPotionEffect(
-                new org.bukkit.potion.PotionEffect(
-                        org.bukkit.potion.PotionEffectType.WEAKNESS,
-                        20 * 60 * 15,
-                        Math.max(0, profile.getOutlawLevel() - 1)
-                )
-        );
+        profile =
+                ladder.getProfile(
+                        killer.getUniqueId()
+                );
 
-        killer.addPotionEffect(
-                new org.bukkit.potion.PotionEffect(
-                        org.bukkit.potion.PotionEffectType.SLOWNESS,
-                        20 * 60 * 15,
-                        Math.max(0, profile.getOutlawLevel() - 1)
-                )
+        applyOutlawEffects(
+                killer,
+                profile
         );
 
         killer.sendMessage(
-                ChatColor.RED + "Innocent killing penalty: " +
+                ChatColor.RED +
+                        "Innocent killing penalty: " +
                         ChatColor.YELLOW +
                         "Outlaw Level " +
                         profile.getOutlawLevel() +
                         ChatColor.RED +
-                        "."
+                        " for 3 minutes."
         );
 
         if (victim != null) {
             Bukkit.broadcastMessage(
-                    ChatColor.DARK_RED + "⚠ " +
+                    ChatColor.DARK_RED +
+                            "⚠ " +
                             ChatColor.RED +
                             killer.getName() +
                             ChatColor.GRAY +
@@ -270,6 +465,39 @@ public class DuelListener implements Listener {
                             " outside a ranked duel."
             );
         }
+    }
+
+    private void applyOutlawEffects(
+            Player player,
+            PlayerRankProfile profile) {
+
+        player.addPotionEffect(
+                new org.bukkit.potion.PotionEffect(
+                        org.bukkit.potion.PotionEffectType.WEAKNESS,
+                        20 * 60 * 3,
+                        Math.max(
+                                0,
+                                profile.getOutlawLevel() - 1
+                        ),
+                        false,
+                        true,
+                        true
+                )
+        );
+
+        player.addPotionEffect(
+                new org.bukkit.potion.PotionEffect(
+                        org.bukkit.potion.PotionEffectType.SLOWNESS,
+                        20 * 60 * 3,
+                        Math.max(
+                                0,
+                                profile.getOutlawLevel() - 1
+                        ),
+                        false,
+                        true,
+                        true
+                )
+        );
     }
 
     private void voidMatch(Player a, Player b, String reason) {
@@ -340,8 +568,7 @@ public class DuelListener implements Listener {
             if (player != null) {
                 player.sendMessage(
                         ChatColor.YELLOW +
-                                "Your slot was occupied by a higher-activity contender. " +
-                                "You are now Civillian."
+                                "Your rank changed because the ladder was rebalanced."
                 );
             }
         }

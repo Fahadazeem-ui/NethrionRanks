@@ -8,7 +8,8 @@ public class DuelResult {
     public enum Type {
         PROMOTION,
         FULL_SWAP,
-        NATIONAL_DEFENSE
+        NATIONAL_DEFENSE,
+        VOID
     }
 
     private final Type type;
@@ -20,10 +21,16 @@ public class DuelResult {
     private final RankTier loserNewTier;
     private final List<UUID> bumpedPlayers;
 
-    public DuelResult(Type type, UUID winner, UUID loser,
-                       RankTier winnerOldTier, RankTier winnerNewTier,
-                       RankTier loserOldTier, RankTier loserNewTier,
-                       List<UUID> bumpedPlayers) {
+    public DuelResult(
+            Type type,
+            UUID winner,
+            UUID loser,
+            RankTier winnerOldTier,
+            RankTier winnerNewTier,
+            RankTier loserOldTier,
+            RankTier loserNewTier,
+            List<UUID> bumpedPlayers) {
+
         this.type = type;
         this.winner = winner;
         this.loser = loser;
@@ -34,12 +41,35 @@ public class DuelResult {
         this.bumpedPlayers = bumpedPlayers;
     }
 
-    public Type getType() { return type; }
-    public UUID getWinner() { return winner; }
-    public UUID getLoser() { return loser; }
-    public RankTier getWinnerOldTier() { return winnerOldTier; }
-    public RankTier getWinnerNewTier() { return winnerNewTier; }
-    public RankTier getLoserOldTier() { return loserOldTier; }
-    public RankTier getLoserNewTier() { return loserNewTier; }
-    public List<UUID> getBumpedPlayers() { return bumpedPlayers; }
+    public Type getType() {
+        return type;
+    }
+
+    public UUID getWinner() {
+        return winner;
+    }
+
+    public UUID getLoser() {
+        return loser;
+    }
+
+    public RankTier getWinnerOldTier() {
+        return winnerOldTier;
+    }
+
+    public RankTier getWinnerNewTier() {
+        return winnerNewTier;
+    }
+
+    public RankTier getLoserOldTier() {
+        return loserOldTier;
+    }
+
+    public RankTier getLoserNewTier() {
+        return loserNewTier;
+    }
+
+    public List<UUID> getBumpedPlayers() {
+        return bumpedPlayers;
+    }
 }

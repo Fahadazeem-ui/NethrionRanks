@@ -7,6 +7,7 @@ import com.nethrion.ranks.commands.RankCommand;
 import com.nethrion.ranks.commands.RankDuelCommand;
 import com.nethrion.ranks.commands.SkillsCommand;
 import com.nethrion.ranks.listeners.BaseListener;
+import com.nethrion.ranks.listeners.NationalWeaponListener;
 import com.nethrion.ranks.listeners.DuelListener;
 import com.nethrion.ranks.listeners.RankDisplayListener;
 import com.nethrion.ranks.listeners.SpearListener;
@@ -29,21 +30,32 @@ public final class Main extends JavaPlugin {
         duelManager = new DuelManager(this, rankLadderManager);
         baseManager = new BaseManager(this);
 
-        getCommand("rank").setExecutor(
-                new RankCommand(rankLadderManager)
-        );
-        getCommand("skills").setExecutor(
-                new SkillsCommand(rankLadderManager)
-        );
-        getCommand("base").setExecutor(
-                new BaseCommand(baseManager)
-        );
-        getCommand("rankduel").setExecutor(
+        RankCommand rankCommand =
+                new RankCommand(rankLadderManager);
+
+        SkillsCommand skillsCommand =
+                new SkillsCommand(rankLadderManager);
+
+        BaseCommand baseCommand =
+                new BaseCommand(baseManager);
+
+        RankDuelCommand rankDuelCommand =
                 new RankDuelCommand(
                         duelManager,
                         rankLadderManager
-                )
-        );
+                );
+
+        getCommand("rank").setExecutor(rankCommand);
+        getCommand("rank").setTabCompleter(rankCommand);
+
+        getCommand("skills").setExecutor(skillsCommand);
+        getCommand("skills").setTabCompleter(skillsCommand);
+
+        getCommand("base").setExecutor(baseCommand);
+        getCommand("base").setTabCompleter(baseCommand);
+
+        getCommand("rankduel").setExecutor(rankDuelCommand);
+        getCommand("rankduel").setTabCompleter(rankDuelCommand);
         getCommand("killcount").setExecutor(
                 new KillCountCommand(rankLadderManager)
         );
@@ -66,11 +78,25 @@ public final class Main extends JavaPlugin {
                 new SpearListener(),
                 this
         );
+
+        getServer().getPluginManager().registerEvents(
+                new NationalWeaponListener(
+                        rankLadderManager
+                ),
+                this
+        );
         getServer().getPluginManager().registerEvents(
                 new RankDisplayListener(
                         rankLadderManager
                 ),
                 this
+        );
+
+        getServer().getScheduler().runTaskTimer(
+                this,
+                rankLadderManager::enforceNationalInactivity,
+                20L * 60L * 5L,
+                20L * 60L * 5L
         );
 
         getLogger().info(

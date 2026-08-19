@@ -13,16 +13,16 @@ permissions:
 
 commands:
   rank:
-    description: Current rank, progression and ladder board
-    usage: /rank | /rank list | /rank help | /rank giveweapon spear [player]
+    description: Current rank, progression, ladder and admin tools
+    usage: /rank | /rank list | /rank help | /rank set <player> <tier> [skill] | /rank giveweapon <player> <skill> <tier>
 
   skills:
-    description: Permanent combat skill levels
+    description: Permanent combat mastery and leaders
     usage: /skills | /skills board
 
   base:
-    description: Set base and inspect its activity audit
-    usage: /base <set|logs> [time]
+    description: Three-slot full-height base audit system
+    usage: /base <set|list|logs|delete>
 
   rankduel:
     description: Formal ranked 1v1 duel

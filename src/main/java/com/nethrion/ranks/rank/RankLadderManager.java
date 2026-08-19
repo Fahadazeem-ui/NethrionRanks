@@ -1656,7 +1656,7 @@ public class RankLadderManager {
                 tier == RankTier.CIVILLIAN ||
                         profile.getSkill() == null
         ) {
-            return ChatColor.GRAY +
+            return ChatColor.GRAY.toString() +
                     ChatColor.BOLD +
                     "◆ Civillian" +
                     ChatColor.DARK_GRAY +
@@ -1670,7 +1670,7 @@ public class RankLadderManager {
         ChatColor tierColor =
                 getTierColor(tier);
 
-        return tierColor +
+        return tierColor.toString() +
                 ChatColor.BOLD +
                 rankBadge(tier) +
                 " " +
@@ -1697,13 +1697,13 @@ public class RankLadderManager {
                 tier == RankTier.CIVILLIAN ||
                         profile.getSkill() == null
         ) {
-            return ChatColor.GRAY +
+            return ChatColor.GRAY.toString() +
                     ChatColor.BOLD +
                     "◆ Civillian " +
                     ChatColor.RESET;
         }
 
-        return getTierColor(tier) +
+        return getTierColor(tier).toString() +
                 ChatColor.BOLD +
                 rankBadge(tier) +
                 " " +

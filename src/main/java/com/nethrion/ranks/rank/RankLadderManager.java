@@ -1580,12 +1580,10 @@ public class RankLadderManager {
                 );
 
         String visibleName =
-                tierColor +
-                        prefix +
-                        ChatColor.GRAY +
-                        " │ " +
-                        ChatColor.RESET +
-                        player.getName();
+                buildStyledPlayerName(
+                        profile,
+                        player.getName()
+                );
 
         player.setPlayerListName(
                 visibleName
@@ -1631,10 +1629,9 @@ public class RankLadderManager {
         }
 
         team.setPrefix(
-                tierColor +
-                        profile.getDisplayPrefix() +
-                        ChatColor.GRAY +
-                        " "
+                buildStyledTeamPrefix(
+                        profile
+                )
         );
 
         team.setSuffix(
@@ -1646,6 +1643,104 @@ public class RankLadderManager {
                     player.getName()
             );
         }
+    }
+
+    private String buildStyledPlayerName(
+            PlayerRankProfile profile,
+            String playerName) {
+
+        RankTier tier =
+                profile.getTier();
+
+        if (
+                tier == RankTier.CIVILLIAN ||
+                        profile.getSkill() == null
+        ) {
+            return ChatColor.GRAY +
+                    ChatColor.BOLD +
+                    "◆ Civillian" +
+                    ChatColor.DARK_GRAY +
+                    ChatColor.BOLD +
+                    " │ " +
+                    ChatColor.RESET +
+                    ChatColor.GRAY +
+                    playerName;
+        }
+
+        ChatColor tierColor =
+                getTierColor(tier);
+
+        return tierColor +
+                ChatColor.BOLD +
+                rankBadge(tier) +
+                " " +
+                tier.getDisplayName() +
+                " " +
+                skillIcon(profile.getSkill()) +
+                " " +
+                profile.getSkill().getMasterTitle() +
+                ChatColor.DARK_GRAY +
+                ChatColor.BOLD +
+                " │ " +
+                ChatColor.RESET +
+                ChatColor.WHITE +
+                playerName;
+    }
+
+    private String buildStyledTeamPrefix(
+            PlayerRankProfile profile) {
+
+        RankTier tier =
+                profile.getTier();
+
+        if (
+                tier == RankTier.CIVILLIAN ||
+                        profile.getSkill() == null
+        ) {
+            return ChatColor.GRAY +
+                    ChatColor.BOLD +
+                    "◆ Civillian " +
+                    ChatColor.RESET;
+        }
+
+        return getTierColor(tier) +
+                ChatColor.BOLD +
+                rankBadge(tier) +
+                " " +
+                tier.getDisplayName() +
+                " " +
+                skillIcon(profile.getSkill()) +
+                " " +
+                profile.getSkill().getMasterTitle() +
+                " " +
+                ChatColor.RESET;
+    }
+
+    private String rankBadge(
+            RankTier tier) {
+
+        return switch (tier) {
+            case NATIONAL -> "♛";
+            case S -> "✦";
+            case A -> "★";
+            case B -> "◆";
+            case C -> "◇";
+            case D -> "•";
+            case E -> "◈";
+            case CIVILLIAN -> "◆";
+        };
+    }
+
+    private String skillIcon(
+            Skill skill) {
+
+        return switch (skill) {
+            case SWORD -> "⚔";
+            case AXE -> "⚒";
+            case MACE -> "✹";
+            case SPEARMACE -> "✦";
+            case BOW -> "➳";
+        };
     }
 
     private ChatColor getTierColor(

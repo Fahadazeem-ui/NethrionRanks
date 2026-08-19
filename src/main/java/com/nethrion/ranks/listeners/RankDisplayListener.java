@@ -89,18 +89,49 @@ public class RankDisplayListener implements Listener {
                         profile.getSkill() == null
         ) {
             return ChatColor.GRAY +
-                    "Civillian ";
+                    ChatColor.BOLD +
+                    "◆ Civillian " +
+                    ChatColor.RESET;
         }
 
-        Skill skill =
-                profile.getSkill();
-
         return tierColor(tier) +
+                ChatColor.BOLD +
+                rankBadge(tier) +
+                " " +
                 tier.getDisplayName() +
                 " " +
-                skill.getMasterTitle() +
-                ChatColor.GRAY +
-                " ";
+                skillIcon(profile.getSkill()) +
+                " " +
+                profile.getSkill().getMasterTitle() +
+                " " +
+                ChatColor.RESET;
+    }
+
+    private String rankBadge(
+            RankTier tier) {
+
+        return switch (tier) {
+            case NATIONAL -> "♛";
+            case S -> "✦";
+            case A -> "★";
+            case B -> "◆";
+            case C -> "◇";
+            case D -> "•";
+            case E -> "◈";
+            case CIVILLIAN -> "◆";
+        };
+    }
+
+    private String skillIcon(
+            Skill skill) {
+
+        return switch (skill) {
+            case SWORD -> "⚔";
+            case AXE -> "⚒";
+            case MACE -> "✹";
+            case SPEARMACE -> "✦";
+            case BOW -> "➳";
+        };
     }
 
     private ChatColor tierColor(

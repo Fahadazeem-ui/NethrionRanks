@@ -1,24 +1,37 @@
-name: MythicInvasion
-
-version: 0.1.0-SNAPSHOT
-
-main: io.github.mindzard.mythicinvasion.MythicInvasionPlugin
-
-description: AI-powered dynamic mythic invasion and ecosystem engine
-
-author: MindZard
-
+name: NethrionRanks
+version: '${version}'
+main: com.nethrion.ranks.Main
 api-version: '1.21'
-
-folia-supported: false
-
-commands:
-  society:
-    description: Shows the current MythicInvasion society state.
-    usage: /society
-    permission: mythicinvasion.debug.society
+author: Nethrion
+description: Ranked progression, formal duels, permanent combat skills, custom Spear and base audit system.
+softdepend: [PlaceholderAPI]
 
 permissions:
-  mythicinvasion.debug.society:
-    description: Allows access to MythicInvasion society debug information.
+  nethrionranks.admin:
+    description: Admin commands for NethrionRanks
     default: op
+
+commands:
+  rank:
+    description: Current rank, progression and ladder board
+    usage: /rank | /rank list | /rank help | /rank giveweapon spear [player]
+
+  skills:
+    description: Permanent combat skill levels
+    usage: /skills | /skills board
+
+  base:
+    description: Set base and inspect its activity audit
+    usage: /base <set|logs> [time]
+
+  rankduel:
+    description: Formal ranked 1v1 duel
+    usage: /rankduel <player> | /rankduel accept <player>
+
+  killcount:
+    description: Your formal ranked duel kill count
+    usage: /killcount
+
+  killtop:
+    description: Top three formal ranked duel killers
+    usage: /killtop

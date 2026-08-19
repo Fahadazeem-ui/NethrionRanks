@@ -1,50 +1,6 @@
-plugin:
-  debug: true
+# NethrionRanks persistence is stored below rankladder and bases.
+# Do not edit player UUID entries while the server is running.
 
-ecosystem:
-  enabled: true
-  update-interval-ticks: 20
+rankladder: {}
 
-world-intelligence:
-  enabled: true
-  update-interval-millis: 5000
-
-society:
-  enabled: true
-  observation-interval-millis: 10000
-  villager-analysis-interval-millis: 10000
-  social-interval-millis: 10000
-
-  pillager-strategy:
-    enabled: true
-    update-interval-millis: 10000
-    assignment-radius: 128.0
-
-behaviour:
-  enabled: true
-  processing-interval-millis: 1000
-
-  decay:
-    half-life-minutes: 30
-
-adaptive-behaviour:
-  enabled: true
-
-  hostile-targeting:
-    enabled: true
-    range: 32.0
-    minimum-advantage: 0.12
-    cooldown-millis: 5000
-
-ai:
-  enabled: true
-  provider: gemini
-  model: gemini-3.6-flash
-  api-key: ""
-  minimum-confidence: 0.65
-  strategy-interval-millis: 60000
-  request-timeout-millis: 30000
-  max-context-characters: 12000
-
-database:
-  enabled: false
+bases: {}

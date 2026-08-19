@@ -88,13 +88,13 @@ public class RankDisplayListener implements Listener {
                 tier == RankTier.CIVILLIAN ||
                         profile.getSkill() == null
         ) {
-            return ChatColor.GRAY +
+            return ChatColor.GRAY.toString() +
                     ChatColor.BOLD +
                     "◆ Civillian " +
                     ChatColor.RESET;
         }
 
-        return tierColor(tier) +
+        return tierColor(tier).toString() +
                 ChatColor.BOLD +
                 rankBadge(tier) +
                 " " +

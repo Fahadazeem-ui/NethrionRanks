@@ -340,8 +340,8 @@ public final class WeaponUtil {
 
         Material material =
                 switch (skill) {
-                    case SWORD -> Material.DIAMOND_SWORD;
-                    case AXE -> Material.DIAMOND_AXE;
+                    case SWORD -> Material.NETHERITE_SWORD;
+                    case AXE -> Material.NETHERITE_AXE;
                     case MACE -> Material.MACE;
                     case SPEARMACE -> Material.IRON_HOE;
                     case BOW -> Material.BOW;
@@ -491,10 +491,11 @@ public final class WeaponUtil {
                         titleSuffix;
 
         ChatColor color =
-                tierColor(tier);
+                weaponNameColor(skill, role);
 
         meta.setDisplayName(
-                color +
+                ChatColor.BOLD +
+                        color.toString() +
                         title
         );
 
@@ -562,6 +563,27 @@ public final class WeaponUtil {
 
         item.setItemMeta(meta);
         return item;
+    }
+
+    private static ChatColor weaponNameColor(
+            Skill skill,
+            String role) {
+
+        if (skill == Skill.SPEARMACE && ROLE_MACE.equals(role)) {
+            return ChatColor.GOLD;
+        }
+
+        if (skill == Skill.SPEARMACE && ROLE_SPEAR.equals(role)) {
+            return ChatColor.AQUA;
+        }
+
+        return switch (skill) {
+            case SWORD -> ChatColor.AQUA;
+            case AXE -> ChatColor.RED;
+            case MACE -> ChatColor.LIGHT_PURPLE;
+            case BOW -> ChatColor.GREEN;
+            case SPEARMACE -> ChatColor.AQUA;
+        };
     }
 
     private static void applyEnchantments(

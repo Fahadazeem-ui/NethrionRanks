@@ -1,5 +1,8 @@
 package com.nethrion.ranks.rank;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.TextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -493,10 +496,8 @@ public final class WeaponUtil {
         ChatColor color =
                 weaponNameColor(skill, role);
 
-        meta.setDisplayName(
-                ChatColor.BOLD +
-                        color.toString() +
-                        title
+        meta.displayName(
+                weaponNameGradient(skill, role, title)
         );
 
         List<String> lore =
@@ -584,6 +585,76 @@ public final class WeaponUtil {
             case BOW -> ChatColor.GREEN;
             case SPEARMACE -> ChatColor.AQUA;
         };
+    }
+
+    /**
+     * Modern Adventure-component name styling:
+     * bold, clean block-like Minecraft text with a smooth two-color gradient.
+     * This changes only the visual item name; it does not change the item's
+     * material, lore, enchantments, tags, rank logic or permissions.
+     */
+    private static Component weaponNameGradient(
+            Skill skill,
+            String role,
+            String title) {
+
+        TextColor start;
+        TextColor end;
+
+        if (skill == Skill.SPEARMACE && ROLE_MACE.equals(role)) {
+            start = TextColor.color(255, 214, 76);
+            end = TextColor.color(255, 116, 0);
+        } else if (skill == Skill.SPEARMACE && ROLE_SPEAR.equals(role)) {
+            start = TextColor.color(74, 238, 255);
+            end = TextColor.color(35, 126, 255);
+        } else {
+            switch (skill) {
+                case SWORD -> {
+                    start = TextColor.color(70, 238, 255);
+                    end = TextColor.color(55, 92, 255);
+                }
+                case AXE -> {
+                    start = TextColor.color(255, 102, 102);
+                    end = TextColor.color(170, 45, 255);
+                }
+                case MACE -> {
+                    start = TextColor.color(255, 125, 244);
+                    end = TextColor.color(122, 85, 255);
+                }
+                case BOW -> {
+                    start = TextColor.color(112, 255, 164);
+                    end = TextColor.color(52, 153, 255);
+                }
+                case SPEARMACE -> {
+                    start = TextColor.color(74, 238, 255);
+                    end = TextColor.color(35, 126, 255);
+                }
+                default -> {
+                    start = TextColor.color(255, 255, 255);
+                    end = TextColor.color(180, 180, 180);
+                }
+            }
+        }
+
+        int length = Math.max(1, title.length());
+        Component.Builder builder = Component.text();
+
+        for (int i = 0; i < length; i++) {
+            char ch = title.charAt(i);
+            double t = length == 1 ? 0.0 : (double) i / (double) (length - 1);
+
+            int r = (int) Math.round(start.red() + (end.red() - start.red()) * t);
+            int g = (int) Math.round(start.green() + (end.green() - start.green()) * t);
+            int b = (int) Math.round(start.blue() + (end.blue() - start.blue()) * t);
+
+            builder.append(
+                    Component.text(ch)
+                            .color(TextColor.color(r, g, b))
+                            .decorate(TextDecoration.BOLD)
+            );
+        }
+
+        return builder.build();
     }
 
     private static void applyEnchantments(

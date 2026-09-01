@@ -637,7 +637,7 @@ public final class WeaponUtil {
         }
 
         int length = Math.max(1, title.length());
-        Component.Builder builder = Component.text();
+        Component result = Component.empty();
 
         for (int i = 0; i < length; i++) {
             char ch = title.charAt(i);
@@ -647,14 +647,14 @@ public final class WeaponUtil {
             int g = (int) Math.round(start.green() + (end.green() - start.green()) * t);
             int b = (int) Math.round(start.blue() + (end.blue() - start.blue()) * t);
 
-            builder.append(
+            result = result.append(
                     Component.text(ch)
                             .color(TextColor.color(r, g, b))
                             .decorate(TextDecoration.BOLD)
             );
         }
 
-        return builder.build();
+        return result;
     }
 
     private static void applyEnchantments(

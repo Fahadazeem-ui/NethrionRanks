@@ -121,6 +121,12 @@ public class PlayerRankProfile {
         clearExpiredOutlaw();
     }
 
+    public void clearOutlawPenalty() {
+        outlawLevel = 0;
+        outlawUntilMillis = 0L;
+        outlawResetCount = 0;
+    }
+
     public long getSkillXp(Skill skill) {
         return skill == null
                 ? 0L

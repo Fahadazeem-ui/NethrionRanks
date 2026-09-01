@@ -283,6 +283,128 @@ public class RankLadderManager {
         return refreshed;
     }
 
+    /**
+     * Innocent-kill rank swap. The complete rank is the player's skill + tier,
+     * so both fields are exchanged. This preserves every seat count exactly,
+     * even when the two players belong to different skills. National weapons
+     * are removed before the swap and recreated only for whoever becomes
+     * National, preventing duplicate National weapons.
+     */
+    public void resolveInnocentKillRankSwap(
+            UUID killerUUID,
+            UUID victimUUID) {
+
+        if (killerUUID == null || victimUUID == null ||
+                killerUUID.equals(victimUUID)) {
+            return;
+        }
+
+        PlayerRankProfile killer = getProfile(killerUUID);
+        PlayerRankProfile victim = getProfile(victimUUID);
+
+        Skill killerSkill = killer.getSkill();
+        RankTier killerTier = killer.getTier();
+        Skill victimSkill = victim.getSkill();
+        RankTier victimTier = victim.getTier();
+
+        if (killerTier == RankTier.NATIONAL || victimTier == RankTier.NATIONAL) {
+            removeAllNationalWeapons(killer);
+            removeAllNationalWeapons(victim);
+        }
+
+        killer.setSkill(victimSkill);
+        killer.setTier(victimTier);
+
+        victim.setSkill(killerSkill);
+        victim.setTier(killerTier);
+
+        if (killer.getTier() == RankTier.NATIONAL) {
+            killer.setLastNationalDuelTimestamp(System.currentTimeMillis());
+        }
+        if (victim.getTier() == RankTier.NATIONAL) {
+            victim.setLastNationalDuelTimestamp(System.currentTimeMillis());
+        }
+
+        persistProfile(killer);
+        persistProfile(victim);
+
+        if (killer.getTier() == RankTier.NATIONAL && killer.getSkill() != null) {
+            ensureNationalWeapon(killerUUID, killer.getSkill());
+        }
+        if (victim.getTier() == RankTier.NATIONAL && victim.getSkill() != null) {
+            ensureNationalWeapon(victimUUID, victim.getSkill());
+        }
+
+        refreshOnlineDisplay(killerUUID);
+        refreshOnlineDisplay(victimUUID);
+    }
+
+    /**
+     * Claims an active outlaw bounty by promoting the hunter one tier in the
+     * hunter's locked skill. If the next tier is full, the lowest-kill occupant
+     * of that seat swaps down into the hunter's old tier. National promotion is
+     * handled with the existing National weapon lifecycle.
+     */
+    public UUID claimOutlawBounty(UUID hunterUUID) {
+        if (hunterUUID == null) return null;
+
+        PlayerRankProfile hunter = getProfile(hunterUUID);
+        Skill skill = hunter.getSkill();
+        RankTier oldTier = hunter.getTier();
+
+        if (skill == null || oldTier == RankTier.NATIONAL) {
+            return null;
+        }
+
+        RankTier newTier = oldTier.next();
+        if (newTier == oldTier || newTier == RankTier.CIVILLIAN) {
+            return null;
+        }
+
+        UUID bumped = null;
+
+        if (countOccupants(skill, newTier, hunterUUID) >= newTier.getSlotsPerSkill()) {
+            bumped = findLowestKillOccupant(
+                    skill,
+                    newTier,
+                    hunterUUID
+            );
+
+            if (bumped == null) {
+                return null;
+            }
+
+            PlayerRankProfile bumpProfile = getProfile(bumped);
+            bumpProfile.setTier(oldTier);
+            persistProfile(bumpProfile);
+
+            if (newTier == RankTier.NATIONAL) {
+                removeAllNationalWeapons(bumpProfile);
+            }
+
+            refreshOnlineDisplay(bumped);
+        }
+
+        if (newTier == RankTier.NATIONAL) {
+            removeAllNationalWeapons(hunter);
+        }
+
+        hunter.setTier(newTier);
+
+        if (newTier == RankTier.NATIONAL) {
+            hunter.setLastNationalDuelTimestamp(System.currentTimeMillis());
+        }
+
+        persistProfile(hunter);
+
+        if (newTier == RankTier.NATIONAL) {
+            ensureNationalWeapon(hunterUUID, skill);
+        }
+
+        refreshOnlineDisplay(hunterUUID);
+        return bumped;
+    }
+
     public void addKill(UUID uuid) {
         PlayerRankProfile profile =
                 getProfile(uuid);

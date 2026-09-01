@@ -138,6 +138,14 @@ public class DuelListener implements Listener {
                 duelManager.getActiveSession(killer.getUniqueId());
 
         if (session == null || !session.involves(loser.getUniqueId())) {
+            PlayerRankProfile victimProfile =
+                    ladder.getProfile(loser.getUniqueId());
+
+            if (victimProfile.isOutlaw()) {
+                handleOutlawBountyClaim(killer, loser);
+                return;
+            }
+
             applyInnocentKillPenalty(killer, loser);
             return;
         }
@@ -426,6 +434,15 @@ public class DuelListener implements Listener {
                         killer.getUniqueId()
                 );
 
+        boolean bountyAlreadyActive = profile.isOutlaw();
+        RankTier oldTier = profile.getTier();
+        Skill oldSkill = profile.getSkill();
+
+        ladder.resolveInnocentKillRankSwap(
+                killer.getUniqueId(),
+                victim.getUniqueId()
+        );
+
         ladder.startOutlawPenalty(
                 killer.getUniqueId(),
                 OUTLAW_DURATION_MILLIS
@@ -441,14 +458,33 @@ public class DuelListener implements Listener {
                 profile
         );
 
+        RankTier newTier = profile.getTier();
+        Skill newSkill = profile.getSkill();
+
         killer.sendMessage(
                 ChatColor.RED +
-                        "Innocent killing penalty: " +
+                        "Innocent kill: " +
                         ChatColor.YELLOW +
+                        "rank changed " +
+                        ChatColor.WHITE +
+                        oldTier.getDisplayName() +
+                        " " +
+                        (oldSkill == null ? "" : oldSkill.getMasterTitle()) +
+                        ChatColor.GRAY +
+                        " → " +
+                        ChatColor.YELLOW +
+                        newTier.getDisplayName() +
+                        " " +
+                        (newSkill == null ? "" : newSkill.getMasterTitle())
+        );
+
+        killer.sendMessage(
+                ChatColor.RED +
                         "Outlaw Level " +
+                        ChatColor.YELLOW +
                         profile.getOutlawLevel() +
                         ChatColor.RED +
-                        " for 3 minutes."
+                        " · 3 minutes."
         );
 
         if (victim != null) {
@@ -464,6 +500,118 @@ public class DuelListener implements Listener {
                             ChatColor.GRAY +
                             " outside a ranked duel."
             );
+
+            if (!bountyAlreadyActive) {
+                Bukkit.broadcastMessage(
+                        ChatColor.GOLD +
+                                "✦ " +
+                                ChatColor.BOLD +
+                                "BOUNTY " +
+                                ChatColor.YELLOW +
+                                killer.getName() +
+                                ChatColor.GRAY +
+                                " — kill them during the outlaw period for " +
+                                ChatColor.GREEN +
+                                "+1 rank " +
+                                ChatColor.GRAY +
+                                "in your skill."
+                );
+            }
+        }
+    }
+
+    private void handleOutlawBountyClaim(
+            Player hunter,
+            Player outlaw) {
+
+        PlayerRankProfile outlawProfile =
+                ladder.getProfile(outlaw.getUniqueId());
+
+        if (!outlawProfile.isOutlaw()) {
+            applyInnocentKillPenalty(hunter, outlaw);
+            return;
+        }
+
+        Skill hunterSkill =
+                ladder.getSkill(hunter.getUniqueId());
+        RankTier oldTier =
+                ladder.getTier(hunter.getUniqueId());
+
+        UUID bumped =
+                ladder.claimOutlawBounty(
+                        hunter.getUniqueId()
+                );
+
+        RankTier newTier =
+                ladder.getTier(hunter.getUniqueId());
+
+        // Claim is consumed exactly once so the same outlaw period cannot be
+        // farmed for repeated rank rewards after the outlaw respawns.
+        outlawProfile.clearOutlawPenalty();
+        ladder.adminPersistProfile(outlawProfile);
+
+        if (newTier == oldTier) {
+            hunter.sendMessage(
+                    ChatColor.YELLOW +
+                            "Bounty claimed, but you could not advance because your skill has no higher seat."
+            );
+            Bukkit.broadcastMessage(
+                    ChatColor.GOLD +
+                            "✦ " +
+                            ChatColor.BOLD +
+                            "BOUNTY CLAIMED " +
+                            ChatColor.YELLOW +
+                            hunter.getName() +
+                            ChatColor.GRAY +
+                            " eliminated outlaw " +
+                            ChatColor.RED +
+                            outlaw.getName() +
+                            ChatColor.GRAY +
+                            "."
+            );
+            return;
+        }
+
+        hunter.sendMessage(
+                ChatColor.GREEN +
+                        "Bounty claimed: " +
+                        ChatColor.WHITE +
+                        oldTier.getDisplayName() +
+                        " → " +
+                        newTier.getDisplayName() +
+                        ChatColor.GRAY +
+                        " in " +
+                        (hunterSkill == null ? "your skill" : hunterSkill.getDisplayName()) +
+                        "."
+        );
+
+        Bukkit.broadcastMessage(
+                ChatColor.GOLD +
+                        "✦ " +
+                        ChatColor.BOLD +
+                        "BOUNTY CLAIMED " +
+                        ChatColor.YELLOW +
+                        hunter.getName() +
+                        ChatColor.GRAY +
+                        " eliminated outlaw " +
+                        ChatColor.RED +
+                        outlaw.getName() +
+                        ChatColor.GRAY +
+                        " and earned " +
+                        ChatColor.GREEN +
+                        "+1 rank " +
+                        ChatColor.GRAY +
+                        "(" + newTier.getDisplayName() + ")."
+        );
+
+        if (bumped != null) {
+            Player displaced = Bukkit.getPlayer(bumped);
+            if (displaced != null) {
+                displaced.sendMessage(
+                        ChatColor.YELLOW +
+                                "Your rank changed because the bounty reward filled your seat."
+                );
+            }
         }
     }
 

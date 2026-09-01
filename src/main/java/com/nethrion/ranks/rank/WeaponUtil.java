@@ -68,6 +68,15 @@ public final class WeaponUtil {
     public static final String ROLE_SPEAR = "SPEAR";
     public static final String ROLE_MACE = "MACE";
 
+    /**
+     * Custom Model Data applied only to locked (National-tier) Mace
+     * pieces, purely so the "OPD's Better Mace" resource pack can
+     * target just this item via a predicate override instead of
+     * reskinning every mace on the server. Does not affect gameplay,
+     * NBT tags used for logic, or any non-National mace.
+     */
+    private static final int NATIONAL_MACE_MODEL_DATA = 990125;
+
     private WeaponUtil() {
     }
 
@@ -560,6 +569,10 @@ public final class WeaponUtil {
                     PersistentDataType.BYTE,
                     (byte) 1
             );
+        }
+
+        if (material == Material.MACE && locked) {
+            meta.setCustomModelData(NATIONAL_MACE_MODEL_DATA);
         }
 
         item.setItemMeta(meta);

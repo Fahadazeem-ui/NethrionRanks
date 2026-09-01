@@ -5,6 +5,7 @@ import com.nethrion.ranks.rank.DuelResult;
 import com.nethrion.ranks.rank.DuelSession;
 import com.nethrion.ranks.rank.PlayerRankProfile;
 import com.nethrion.ranks.rank.RankLadderManager;
+import com.nethrion.ranks.rank.RankTier;
 import com.nethrion.ranks.rank.Skill;
 import com.nethrion.ranks.rank.WeaponUtil;
 import org.bukkit.Bukkit;

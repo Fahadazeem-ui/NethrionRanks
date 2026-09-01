@@ -308,8 +308,8 @@ public class RankLadderManager {
         RankTier victimTier = victim.getTier();
 
         if (killerTier == RankTier.NATIONAL || victimTier == RankTier.NATIONAL) {
-            removeAllNationalWeapons(killer);
-            removeAllNationalWeapons(victim);
+            removeAllNationalWeapons(killerUUID);
+            removeAllNationalWeapons(victimUUID);
         }
 
         killer.setSkill(victimSkill);
@@ -379,14 +379,14 @@ public class RankLadderManager {
             persistProfile(bumpProfile);
 
             if (newTier == RankTier.NATIONAL) {
-                removeAllNationalWeapons(bumpProfile);
+                removeAllNationalWeapons(bumped);
             }
 
             refreshOnlineDisplay(bumped);
         }
 
         if (newTier == RankTier.NATIONAL) {
-            removeAllNationalWeapons(hunter);
+            removeAllNationalWeapons(hunterUUID);
         }
 
         hunter.setTier(newTier);

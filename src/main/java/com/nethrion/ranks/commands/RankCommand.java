@@ -305,104 +305,94 @@ public class RankCommand
                 ChatColor.DARK_GRAY +
                         "════════ " +
                         ChatColor.GOLD +
-                        " RANK LADDER " +
+                        " RANK BOARD " +
                         ChatColor.DARK_GRAY +
                         "════════"
         );
 
-        for (Skill skill : Skill.values()) {
+        List<PlayerRankProfile> ranked =
+                new ArrayList<>();
+
+        for (
+                PlayerRankProfile profile :
+                ladder.getAllProfiles()
+        ) {
+            if (
+                    profile.getTier().isRanked() &&
+                            profile.getSkill() != null
+            ) {
+                ranked.add(profile);
+            }
+        }
+
+        if (ranked.isEmpty()) {
             sender.sendMessage(
-                    ChatColor.AQUA +
-                            skill.getMasterTitle()
+                    ChatColor.DARK_GRAY +
+                            "  Abhi tak kisi ne rank claim nahi ki."
             );
 
-            for (
-                    RankTier tier :
-                    RankTier.values()
-            ) {
-                if (
-                        tier == RankTier.CIVILLIAN
-                ) {
-                    continue;
-                }
+            sender.sendMessage(
+                    ChatColor.DARK_GRAY +
+                            "════════════════════════════════"
+            );
+            return;
+        }
 
-                List<PlayerRankProfile> occupants =
-                        ladder.getOccupants(
-                                skill,
-                                tier
-                        );
+        ranked.sort(
+                java.util.Comparator
+                        .comparingInt(
+                                (PlayerRankProfile profile) ->
+                                        profile.getTier().ordinal()
+                        )
+                        .reversed()
+                        .thenComparing(
+                                PlayerRankProfile::getKills,
+                                java.util.Comparator.reverseOrder()
+                        )
+        );
 
-                StringBuilder line =
-                        new StringBuilder();
+        for (PlayerRankProfile profile : ranked) {
+            boolean online =
+                    Bukkit.getPlayer(
+                            profile.getUuid()
+                    ) != null;
 
-                for (
-                        PlayerRankProfile profile :
-                        occupants
-                ) {
-                    if (
-                            !line.isEmpty()
-                    ) {
-                        line.append(
-                                ChatColor.GRAY +
-                                        ", "
-                        );
-                    }
+            String name =
+                    Bukkit.getOfflinePlayer(
+                            profile.getUuid()
+                    ).getName();
 
-                    Player online =
-                            Bukkit.getPlayer(
-                                    profile.getUuid()
-                            );
-
-                    String name =
-                            online != null
-                                    ? online.getName()
-                                    : "Offline";
-
-                    line.append(
-                            tierColor(tier)
-                    )
-                    .append(name)
-                    .append(
-                            ChatColor.DARK_GRAY
-                    )
-                    .append("(")
-                    .append(
-                            ChatColor.GREEN
-                    )
-                    .append(
-                            profile.getKills()
-                    )
-                    .append(
-                            ChatColor.DARK_GRAY
-                    )
-                    .append(")");
-                }
-
-                if (line.isEmpty()) {
-                    line.append(
-                            ChatColor.DARK_GRAY +
-                                    "—"
-                    );
-                }
-
-                sender.sendMessage(
-                        ChatColor.GRAY +
-                                "  " +
-                                tierColor(tier) +
-                                tier.getDisplayName() +
-                                ChatColor.DARK_GRAY +
-                                " [" +
-                                tier.getSlotsPerSkill() +
-                                "] " +
-                                ChatColor.WHITE +
-                                line
-                );
+            if (name == null) {
+                name = "Unknown";
             }
+
+            sender.sendMessage(
+                    tierColor(profile.getTier()) +
+                            profile.getTier().getDisplayName() +
+                            ChatColor.DARK_GRAY +
+                            " | " +
+                            (
+                                    online
+                                            ? ChatColor.WHITE
+                                            : ChatColor.GRAY
+                            ) +
+                            name +
+                            ChatColor.DARK_GRAY +
+                            " — " +
+                            ChatColor.AQUA +
+                            profile.getSkill().getMasterTitle() +
+                            ChatColor.DARK_GRAY +
+                            " (" +
+                            ChatColor.GREEN +
+                            profile.getKills() +
+                            ChatColor.DARK_GRAY +
+                            ")"
+            );
         }
 
         sender.sendMessage(
                 ChatColor.DARK_GRAY +
-                        "══════════════════════════════"
+                        "════════════════════════════════"
         );
     }
 

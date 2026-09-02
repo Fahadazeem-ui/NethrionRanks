@@ -1,7 +1,7 @@
 name: NethrionRanks
 version: '${version}'
 main: com.nethrion.ranks.Main
-api-version: '1.21'
+api-version: '1.21.11'
 author: Nethrion
 description: Ranked progression, formal duels, permanent combat skills, custom Spear and base audit system.
 softdepend: [PlaceholderAPI]

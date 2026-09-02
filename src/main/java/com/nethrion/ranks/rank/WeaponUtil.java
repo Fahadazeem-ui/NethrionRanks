@@ -6,8 +6,12 @@ import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.EquipmentSlotGroup;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -76,6 +80,16 @@ public final class WeaponUtil {
      * NBT tags used for logic, or any non-National mace.
      */
     private static final int NATIONAL_MACE_MODEL_DATA = 990125;
+
+    /**
+     * Flat bonus added to the real vanilla Spear's base attack
+     * damage attribute, National tier only. A real Netherite Spear's
+     * unenchanted jab hits for 5 — noticeably below the other
+     * National melee weapons (Netherite Sword = 8 base). This closes
+     * that gap without touching the Spear's own charge-attack /
+     * reach / Lunge mechanics, which stay fully vanilla.
+     */
+    private static final double NATIONAL_SPEAR_DAMAGE_BOOST = 3.0;
 
     private WeaponUtil() {
     }
@@ -435,9 +449,16 @@ public final class WeaponUtil {
             RankTier tier,
             boolean locked) {
 
+        // National (locked) tier gets a real vanilla Spear item
+        // (Material.NETHERITE_SPEAR, added in the Mounts of Mayhem
+        // update). Every tier below National keeps the original
+        // Iron Hoe placeholder — unchanged, exactly as before.
+        Material spearMaterial =
+                locked ? Material.NETHERITE_SPEAR : Material.IRON_HOE;
+
         ItemStack item =
                 buildWeaponPiece(
-                        Material.IRON_HOE,
+                        spearMaterial,
                         Skill.SPEARMACE,
                         tier,
                         locked,
@@ -575,8 +596,67 @@ public final class WeaponUtil {
             meta.setCustomModelData(NATIONAL_MACE_MODEL_DATA);
         }
 
+        if (isRealSpearMaterial(material) && locked) {
+            addAttackDamageBoost(
+                    meta,
+                    NATIONAL_SPEAR_DAMAGE_BOOST
+            );
+        }
+
         item.setItemMeta(meta);
         return item;
+    }
+
+    /**
+     * True for any real vanilla Spear tier (Mounts of Mayhem update):
+     * wooden_spear, stone_spear, copper_spear, iron_spear,
+     * golden_spear, diamond_spear, netherite_spear. False for the
+     * IRON_HOE placeholder still used below National tier.
+     */
+    /**
+     * True if the item is a real vanilla Spear tier (not the
+     * IRON_HOE placeholder used below National tier). SpearListener
+     * uses this to step aside and let vanilla handle jab/charge/
+     * Lunge natively for real Spear items, while still running its
+     * own simulation for the IRON_HOE placeholder pieces.
+     */
+    public static boolean isRealSpear(
+            ItemStack item) {
+
+        return item != null &&
+                isRealSpearMaterial(item.getType());
+    }
+
+    private static boolean isRealSpearMaterial(
+            Material material) {
+
+        return material != null &&
+                material.name().endsWith("_SPEAR");
+    }
+
+    private static void addAttackDamageBoost(
+            ItemMeta meta,
+            double amount) {
+
+        Attribute attackDamage =
+                Registry.ATTRIBUTE.get(
+                        NamespacedKey.minecraft("attack_damage")
+                );
+
+        if (attackDamage == null) return;
+
+        AttributeModifier modifier =
+                new AttributeModifier(
+                        new NamespacedKey(
+                                "nethrionranks",
+                                "national_spear_damage_boost"
+                        ),
+                        amount,
+                        AttributeModifier.Operation.ADD_NUMBER,
+                        EquipmentSlotGroup.MAINHAND
+                );
+
+        meta.addAttributeModifier(attackDamage, modifier);
     }
 
     private static ChatColor weaponNameColor(
@@ -712,11 +792,13 @@ public final class WeaponUtil {
         }
 
         if (skill == Skill.SPEARMACE && ROLE_SPEAR.equals(role)) {
-            add(item, Enchantment.FIRE_ASPECT, 2);
-            add(item, Enchantment.KNOCKBACK, 3);
-            add(item, Enchantment.UNBREAKING, 4);
-            add(item, Enchantment.MENDING, 4);
-            applyLunge(item, 4);
+            add(item, Enchantment.SHARPNESS, 6);
+            add(item, Enchantment.LUNGE, 5);
+            add(item, Enchantment.LOOTING, 4);
+            add(item, Enchantment.FIRE_ASPECT, 3);
+            add(item, Enchantment.KNOCKBACK, 2);
+            add(item, Enchantment.UNBREAKING, 5);
+            add(item, Enchantment.MENDING, 1);
             return;
         }
 
@@ -758,52 +840,6 @@ public final class WeaponUtil {
                 // SPEARMACE handled above via role.
             }
         }
-    }
-
-    /**
-     * Applies a light "Lunge" tag: a PDC level SpearListener reads
-     * to trigger an actual forward-dash on hit, plus a lore line so
-     * it visually reads like the item's other enchantments. There is
-     * no real registered Minecraft enchantment named Lunge.
-     */
-    private static void applyLunge(
-            ItemStack item,
-            int level) {
-
-        ItemMeta meta =
-                item.getItemMeta();
-
-        if (meta == null) return;
-
-        meta.getPersistentDataContainer().set(
-                LUNGE_KEY,
-                PersistentDataType.INTEGER,
-                level
-        );
-
-        List<String> lore =
-                meta.hasLore() && meta.getLore() != null
-                        ? new ArrayList<>(meta.getLore())
-                        : new ArrayList<>();
-
-        String numeral =
-                switch (level) {
-                    case 1 -> "I";
-                    case 2 -> "II";
-                    case 3 -> "III";
-                    case 5 -> "V";
-                    case 6 -> "VI";
-                    default -> "IV";
-                };
-
-        lore.add(
-                ChatColor.GRAY +
-                        "Lunge " +
-                        numeral
-        );
-
-        meta.setLore(lore);
-        item.setItemMeta(meta);
     }
 
     /**

@@ -38,6 +38,12 @@ public class SpearListener implements Listener {
 
         if (!WeaponUtil.isSpear(item)) return;
 
+        // Real Spear items (National tier, Mounts of Mayhem) run
+        // fully on vanilla jab/charge/Lunge mechanics now — this
+        // custom simulation only exists for the IRON_HOE placeholder
+        // still used below National tier.
+        if (WeaponUtil.isRealSpear(item)) return;
+
         long now = System.currentTimeMillis();
         Long last = cooldowns.get(player.getUniqueId());
         if (last != null && now - last < SWING_COOLDOWN_MILLIS) return;
@@ -100,6 +106,11 @@ public class SpearListener implements Listener {
             return;
         }
 
+        if (WeaponUtil.isRealSpear(
+                player.getInventory().getItemInMainHand())) {
+            return;
+        }
+
         if (customDamage.contains(event.getEntity().getUniqueId())) {
             return;
         }
@@ -109,16 +120,20 @@ public class SpearListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockDamage(BlockDamageEvent event) {
-        if (WeaponUtil.isSpear(
-                event.getPlayer().getInventory().getItemInMainHand())) {
+        ItemStack held =
+                event.getPlayer().getInventory().getItemInMainHand();
+
+        if (WeaponUtil.isSpear(held) && !WeaponUtil.isRealSpear(held)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
-        if (WeaponUtil.isSpear(
-                event.getPlayer().getInventory().getItemInMainHand())) {
+        ItemStack held =
+                event.getPlayer().getInventory().getItemInMainHand();
+
+        if (WeaponUtil.isSpear(held) && !WeaponUtil.isRealSpear(held)) {
             event.setCancelled(true);
         }
     }

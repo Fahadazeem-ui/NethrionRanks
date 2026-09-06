@@ -133,12 +133,76 @@ public class DuelListener implements Listener {
         Player loser = event.getEntity();
         Player killer = loser.getKiller();
 
-        if (killer == null) return;
-
+        // Look the session up by the LOSER, not the killer. Looking it up by
+        // killer.getUniqueId() meant a duel never got closed out when the
+        // duelling player died from something other than their opponent
+        // (fall damage, void, /kill, lava, a third player interfering) —
+        // the session just stayed "active" forever. The loser is always the
+        // right anchor: if they were duelling, that duel needs to end no
+        // matter what killed them.
         DuelSession session =
-                duelManager.getActiveSession(killer.getUniqueId());
+                duelManager.getActiveSession(loser.getUniqueId());
 
-        if (session == null || !session.involves(loser.getUniqueId())) {
+        if (session != null && !session.involves(loser.getUniqueId())) {
+            // Defensive: should be impossible since getActiveSession already
+            // filters on involvement, but never trust it silently.
+            session = null;
+        }
+
+        if (session != null) {
+            boolean killedByOpponent =
+                    killer != null &&
+                            session.involves(killer.getUniqueId()) &&
+                            !killer.getUniqueId().equals(loser.getUniqueId());
+
+            if (!killedByOpponent) {
+                // The duel got interrupted by something other than a clean
+                // kill from the actual opponent: no killer at all (fall,
+                // void, environment, self-inflicted), or a third player
+                // stepped in and got the kill instead. Either way the duel
+                // itself cannot be scored, so close it out as void and make
+                // sure the opponent's rank/state can never get stuck
+                // waiting on a match that will never finish.
+                duelManager.endSession(session);
+
+                UUID opponentId = session.getOpponent(loser.getUniqueId());
+                Player opponent = Bukkit.getPlayer(opponentId);
+
+                if (opponent != null) {
+                    voidMatch(
+                            opponent,
+                            loser,
+                            "Duel interrupted before it could be scored (opponent died to something other than you)."
+                    );
+                } else {
+                    loser.sendMessage(
+                            ChatColor.GRAY +
+                                    "Duel void: match ended before it could be scored."
+                    );
+                }
+
+                // The duel is handled. If there was a genuine third-party
+                // killer, their kill is still a separate event (innocent
+                // kill / bounty claim) and must go through the normal path.
+                if (killer != null) {
+                    PlayerRankProfile victimProfile =
+                            ladder.getProfile(loser.getUniqueId());
+
+                    if (victimProfile.isOutlaw()) {
+                        handleOutlawBountyClaim(killer, loser);
+                    } else {
+                        applyInnocentKillPenalty(killer, loser);
+                    }
+                }
+                return;
+            }
+
+            // killedByOpponent == true: fall through into the normal
+            // ranked-duel resolution below, using this session.
+        } else {
+            // Loser wasn't in any duel at all.
+            if (killer == null) return;
+
             PlayerRankProfile victimProfile =
                     ladder.getProfile(loser.getUniqueId());
 
@@ -426,6 +490,28 @@ public class DuelListener implements Listener {
         );
     }
 
+    /**
+     * Best-effort detection of which weapon actually landed the killing
+     * blow, for cases (bounty claims) that happen outside a tracked
+     * DuelSession and so have no recorded damage history. Mirrors
+     * resolveSkillUsed()'s Arrow-vs-melee handling.
+     */
+    private Skill resolveKillShotSkill(Player killer, Player victim) {
+        org.bukkit.event.entity.EntityDamageEvent lastCause =
+                victim.getLastDamageCause();
+
+        if (
+                lastCause instanceof EntityDamageByEntityEvent lastEntityCause &&
+                        lastEntityCause.getDamager() instanceof Arrow
+        ) {
+            return Skill.BOW;
+        }
+
+        return WeaponUtil.fromItemStack(
+                killer.getInventory().getItemInMainHand()
+        );
+    }
+
     private void applyInnocentKillPenalty(
             Player killer,
             Player victim) {
@@ -531,6 +617,22 @@ public class DuelListener implements Listener {
         if (!outlawProfile.isOutlaw()) {
             applyInnocentKillPenalty(hunter, outlaw);
             return;
+        }
+
+        // A bounty claim must lock the hunter's skill from the kill weapon
+        // exactly like a normal ranked duel win does (see onDeath, which
+        // calls ladder.assignSkillIfAbsent for the winner). Without this,
+        // a hunter who never had a locked skill yet would hit
+        // claimOutlawBounty() with skill == null, which bails out with no
+        // rank change at all — the exact "avenger gets no rank/swap" bug.
+        if (ladder.getSkill(hunter.getUniqueId()) == null) {
+            Skill killShotSkill = resolveKillShotSkill(hunter, outlaw);
+            if (killShotSkill != null) {
+                ladder.assignSkillIfAbsent(
+                        hunter.getUniqueId(),
+                        killShotSkill
+                );
+            }
         }
 
         Skill hunterSkill =

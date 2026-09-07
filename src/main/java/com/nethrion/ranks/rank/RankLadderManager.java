@@ -500,9 +500,18 @@ public class RankLadderManager {
             int n) {
 
         List<PlayerRankProfile> sorted =
-                new ArrayList<>(
-                        profiles.values()
-                );
+                new ArrayList<>();
+
+        for (PlayerRankProfile profile : profiles.values()) {
+            // Skip anyone with zero kills - a profile exists for every
+            // player who has ever joined (even Civillians who never
+            // fought), so without this filter /killtop always padded
+            // itself out with random never-fought players once fewer
+            // than 3 people actually had kills.
+            if (profile.getKills() > 0) {
+                sorted.add(profile);
+            }
+        }
 
         sorted.sort(
                 Comparator

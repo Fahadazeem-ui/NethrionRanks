@@ -60,6 +60,9 @@ public class RankCommand
             case "set" ->
                     handleSetRank(sender, args);
 
+            case "remove" ->
+                    handleRemoveRank(sender, args);
+
             case "giveweapon" ->
                     handleGiveWeapon(sender, args);
 
@@ -277,6 +280,13 @@ public class RankCommand
             sender.sendMessage(
                     ChatColor.YELLOW +
                             "/rank set <player> <tier> [skill]"
+            );
+
+            sender.sendMessage(
+                    ChatColor.YELLOW +
+                            "/rank remove <player>" +
+                            ChatColor.GRAY +
+                            " — full reset back to Civillian"
             );
 
             sender.sendMessage(
@@ -527,6 +537,73 @@ public class RankCommand
         );
     }
 
+    /**
+     * /rank remove <player> — full admin reset back to Civillian with no
+     * locked skill, exactly like a brand-new player. A player's rank is
+     * always exactly one skill + one tier (see PlayerRankProfile), so
+     * there is nothing skill-specific to target: removing the rank clears
+     * both fields together. Use /rank giveweapon or /rank removeweapon if
+     * only the physical National weapon item needs adjusting.
+     */
+    private void handleRemoveRank(
+            CommandSender sender,
+            String[] args) {
+
+        if (
+                !sender.hasPermission(
+                        "nethrionranks.admin"
+                )
+        ) {
+            sender.sendMessage(
+                    ChatColor.RED +
+                            "No permission."
+            );
+            return;
+        }
+
+        if (
+                args.length < 2
+        ) {
+            sender.sendMessage(
+                    ChatColor.YELLOW +
+                            "Usage: /rank remove <player>"
+            );
+            return;
+        }
+
+        Player target =
+                Bukkit.getPlayerExact(
+                        args[1]
+                );
+
+        if (target == null) {
+            sender.sendMessage(
+                    ChatColor.RED +
+                            "Player online nahi hai."
+            );
+            return;
+        }
+
+        ladder.adminResetToCivilian(
+                target.getUniqueId()
+        );
+
+        target.sendMessage(
+                ChatColor.YELLOW +
+                        "Your rank was reset by an admin. You are now " +
+                        ChatColor.GRAY +
+                        "Civillian" +
+                        ChatColor.YELLOW +
+                        " with no locked skill."
+        );
+
+        sender.sendMessage(
+                ChatColor.GREEN +
+                        target.getName() +
+                        " has been reset to Civillian (skill cleared)."
+        );
+    }
+
     private void handleGiveWeapon(
             CommandSender sender,
             String[] args) {
@@ -736,6 +813,7 @@ public class RankCommand
                     )
             ) {
                 values.add("set");
+                values.add("remove");
                 values.add("giveweapon");
                 values.add("removeweapon");
             }
@@ -751,6 +829,8 @@ public class RankCommand
                         (
                                 args[0]
                                         .equalsIgnoreCase("set") ||
+                                        args[0]
+                                                .equalsIgnoreCase("remove") ||
                                         args[0]
                                                 .equalsIgnoreCase(
                                                         "giveweapon"

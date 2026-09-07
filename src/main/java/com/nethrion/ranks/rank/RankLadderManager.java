@@ -196,6 +196,33 @@ public class RankLadderManager {
         }
     }
 
+    /**
+     * Full admin reset used by /rank remove: strips the player back to a
+     * plain, unranked Civillian with no locked skill, exactly like a brand
+     * new player. Any National weapon(s) they hold are stripped first (a
+     * demoted National never keeps that weapon - see
+     * NationalWeaponListener's class comment), the outlaw/bounty state is
+     * cleared so they don't stay a bounty target after losing their rank,
+     * and skill XP is left untouched so re-ranking later doesn't erase
+     * earned mastery progress.
+     */
+    public void adminResetToCivilian(UUID uuid) {
+        if (uuid == null) return;
+
+        PlayerRankProfile profile = getProfile(uuid);
+
+        if (profile.getTier() == RankTier.NATIONAL) {
+            removeAllNationalWeapons(uuid);
+        }
+
+        profile.setTier(RankTier.CIVILLIAN);
+        profile.setSkill(null);
+        profile.clearOutlawPenalty();
+
+        persistProfile(profile);
+        refreshOnlineDisplay(uuid);
+    }
+
     public PlayerRankProfile getProfile(UUID uuid) {
         PlayerRankProfile profile =
                 profiles.computeIfAbsent(
@@ -289,14 +316,31 @@ public class RankLadderManager {
      * even when the two players belong to different skills. National weapons
      * are removed before the swap and recreated only for whoever becomes
      * National, preventing duplicate National weapons.
+     *
+     * The swap is a PUNISHMENT aimed at a higher-rank player who preys on a
+     * lower-rank player outside a ranked duel: the bully loses their seat to
+     * the victim. It must only ever move rank from the killer DOWN to the
+     * victim's old (lower) rank - never the other way around. If it ran
+     * unconditionally, a low/unranked player could farm free rank simply by
+     * ambushing a high-rank player, which is the exact exploit this guard
+     * closes.
+     *
+     * Therefore the swap only happens when the killer's tier is strictly
+     * higher than the victim's tier (the victim really was "kam rank par").
+     * Equal tiers or a killer who is the same/lower rank than the victim do
+     * NOT swap - the killer still receives the outlaw penalty (see
+     * DuelListener#applyInnocentKillPenalty), just no rank change.
+     *
+     * @return true if a swap actually happened, false if the tiers did not
+     *         qualify (in which case nothing about either profile changed).
      */
-    public void resolveInnocentKillRankSwap(
+    public boolean resolveInnocentKillRankSwap(
             UUID killerUUID,
             UUID victimUUID) {
 
         if (killerUUID == null || victimUUID == null ||
                 killerUUID.equals(victimUUID)) {
-            return;
+            return false;
         }
 
         PlayerRankProfile killer = getProfile(killerUUID);
@@ -306,6 +350,14 @@ public class RankLadderManager {
         RankTier killerTier = killer.getTier();
         Skill victimSkill = victim.getSkill();
         RankTier victimTier = victim.getTier();
+
+        // Only a killer who outranks their victim can trigger the swap.
+        // Same tier, or killer ranked lower/unranked than the victim: no
+        // swap at all - the kill is still punished via the outlaw penalty,
+        // but nobody's rank moves.
+        if (!killerTier.isHigherThan(victimTier)) {
+            return false;
+        }
 
         if (killerTier == RankTier.NATIONAL || victimTier == RankTier.NATIONAL) {
             removeAllNationalWeapons(killerUUID);
@@ -337,6 +389,8 @@ public class RankLadderManager {
 
         refreshOnlineDisplay(killerUUID);
         refreshOnlineDisplay(victimUUID);
+
+        return true;
     }
 
     /**
@@ -1789,18 +1843,14 @@ public class RankLadderManager {
                     playerName;
         }
 
-        ChatColor tierColor =
-                getTierColor(tier);
-
-        return tierColor.toString() +
-                ChatColor.BOLD +
+        String rankText =
                 rankBadge(tier) +
-                " " +
-                tier.getDisplayName() +
-                " " +
-                skillIcon(profile.getSkill()) +
-                " " +
-                profile.getSkill().getMasterTitle() +
+                        " " +
+                        tier.getDisplayName() +
+                        " " +
+                        profile.getSkill().getMasterTitle();
+
+        return gradientTierText(tier, rankText) +
                 ChatColor.DARK_GRAY +
                 ChatColor.BOLD +
                 " │ " +
@@ -1825,15 +1875,14 @@ public class RankLadderManager {
                     ChatColor.RESET;
         }
 
-        return getTierColor(tier).toString() +
-                ChatColor.BOLD +
+        String rankText =
                 rankBadge(tier) +
-                " " +
-                tier.getDisplayName() +
-                " " +
-                skillIcon(profile.getSkill()) +
-                " " +
-                profile.getSkill().getMasterTitle() +
+                        " " +
+                        tier.getDisplayName() +
+                        " " +
+                        profile.getSkill().getMasterTitle();
+
+        return gradientTierText(tier, rankText) +
                 " " +
                 ChatColor.RESET;
     }
@@ -1853,16 +1902,91 @@ public class RankLadderManager {
         };
     }
 
-    private String skillIcon(
-            Skill skill) {
+    /**
+     * Each ranked tier gets its own unique two-stop gradient (start hex ->
+     * end hex), applied per-character across the whole "badge tier skill"
+     * string, bold throughout. This reads as premium/shiny in normal
+     * Minecraft chat and the tab list - unlike a flat ChatColor, and unlike
+     * plain hex-colored Discord embeds, a flat single color looks dull
+     * in-game once you've seen a gradient next to it.
+     *
+     * Colors are chosen so every tier is visually distinct at a glance:
+     * E teal/green, D blue, C violet, B magenta/rose, A orange/red,
+     * S deep crimson, NATIONAL gold.
+     */
+    private String gradientTierText(
+            RankTier tier,
+            String text) {
 
-        return switch (skill) {
-            case SWORD -> "⚔";
-            case AXE -> "⚒";
-            case MACE -> "✹";
-            case SPEARMACE -> "✦";
-            case BOW -> "➳";
+        String[] stops = switch (tier) {
+            case E -> new String[]{"#7CF5C4", "#12B886"};
+            case D -> new String[]{"#7FC7FF", "#1E6FE0"};
+            case C -> new String[]{"#D6A6FF", "#8B2FE0"};
+            case B -> new String[]{"#FF9FD1", "#C21E7A"};
+            case A -> new String[]{"#FFB066", "#E0431E"};
+            case S -> new String[]{"#FF6B6B", "#7A0E0E"};
+            case NATIONAL -> new String[]{"#FFF3B0", "#E0A100"};
+            case CIVILLIAN -> new String[]{"#D0D0D0", "#8A8A8A"};
         };
+
+        return gradient(text, stops[0], stops[1]);
+    }
+
+    /**
+     * Renders text with a smooth two-stop RGB gradient, one hex color code
+     * per character. Minecraft's legacy formatting resets bold whenever a
+     * new color code is applied, so BOLD has to be re-emitted after every
+     * single character's color code to keep the whole string bold.
+     * Spaces are colored too (harmless, keeps the gradient step accurate)
+     * but skip the bold re-application since it has no visible effect on
+     * whitespace.
+     */
+    private String gradient(
+            String text,
+            String startHex,
+            String endHex) {
+
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+
+        int start = Integer.parseInt(startHex.substring(1), 16);
+        int end = Integer.parseInt(endHex.substring(1), 16);
+
+        int sr = (start >> 16) & 0xFF;
+        int sg = (start >> 8) & 0xFF;
+        int sb = start & 0xFF;
+
+        int er = (end >> 16) & 0xFF;
+        int eg = (end >> 8) & 0xFF;
+        int eb = end & 0xFF;
+
+        int length = text.length();
+        StringBuilder result = new StringBuilder();
+
+        for (int i = 0; i < length; i++) {
+            char c = text.charAt(i);
+
+            double ratio =
+                    length == 1 ? 0.0 : (double) i / (double) (length - 1);
+
+            int r = (int) Math.round(sr + (er - sr) * ratio);
+            int g = (int) Math.round(sg + (eg - sg) * ratio);
+            int b = (int) Math.round(sb + (eb - sb) * ratio);
+
+            String hex =
+                    String.format("#%02X%02X%02X", r, g, b);
+
+            result.append(ChatColor.of(hex));
+
+            if (c != ' ') {
+                result.append(ChatColor.BOLD);
+            }
+
+            result.append(c);
+        }
+
+        return result.toString();
     }
 
     private ChatColor getTierColor(

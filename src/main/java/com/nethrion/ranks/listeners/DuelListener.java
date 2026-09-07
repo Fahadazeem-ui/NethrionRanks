@@ -525,7 +525,10 @@ public class DuelListener implements Listener {
         RankTier oldTier = profile.getTier();
         Skill oldSkill = profile.getSkill();
 
-        ladder.resolveInnocentKillRankSwap(
+        // Swap only actually happens if the killer outranked the victim -
+        // see the Javadoc on resolveInnocentKillRankSwap for why a
+        // lower/equal-rank killer must never gain rank this way.
+        boolean swapped = ladder.resolveInnocentKillRankSwap(
                 killer.getUniqueId(),
                 victim.getUniqueId()
         );
@@ -548,22 +551,31 @@ public class DuelListener implements Listener {
         RankTier newTier = profile.getTier();
         Skill newSkill = profile.getSkill();
 
-        killer.sendMessage(
-                ChatColor.RED +
-                        "Innocent kill: " +
-                        ChatColor.YELLOW +
-                        "rank changed " +
-                        ChatColor.WHITE +
-                        oldTier.getDisplayName() +
-                        " " +
-                        (oldSkill == null ? "" : oldSkill.getMasterTitle()) +
-                        ChatColor.GRAY +
-                        " → " +
-                        ChatColor.YELLOW +
-                        newTier.getDisplayName() +
-                        " " +
-                        (newSkill == null ? "" : newSkill.getMasterTitle())
-        );
+        if (swapped) {
+            killer.sendMessage(
+                    ChatColor.RED +
+                            "Innocent kill: " +
+                            ChatColor.YELLOW +
+                            "rank changed " +
+                            ChatColor.WHITE +
+                            oldTier.getDisplayName() +
+                            " " +
+                            (oldSkill == null ? "" : oldSkill.getMasterTitle()) +
+                            ChatColor.GRAY +
+                            " → " +
+                            ChatColor.YELLOW +
+                            newTier.getDisplayName() +
+                            " " +
+                            (newSkill == null ? "" : newSkill.getMasterTitle())
+            );
+        } else {
+            killer.sendMessage(
+                    ChatColor.RED +
+                            "Innocent kill: " +
+                            ChatColor.GRAY +
+                            "no rank swap — the victim was not ranked below you."
+            );
+        }
 
         killer.sendMessage(
                 ChatColor.RED +
@@ -615,7 +627,20 @@ public class DuelListener implements Listener {
                 ladder.getProfile(outlaw.getUniqueId());
 
         if (!outlawProfile.isOutlaw()) {
-            applyInnocentKillPenalty(hunter, outlaw);
+            // The bounty timer ran out in the instant between the killing
+            // blow and this death being processed (both fire the same
+            // tick, but the outlaw flag is lazily expired on read, so this
+            // window is real). The hunter went for a legitimate bounty
+            // claim; punishing them here as a fresh "innocent kill" would
+            // immediately slap a brand-new bounty on THEM, and whoever
+            // finishes them off next would face the exact same edge case -
+            // an endless chain of bounties nobody actually earned. So this
+            // path is a no-op: no swap, no outlaw penalty, no bounty. The
+            // kill is simply not scored either way.
+            hunter.sendMessage(
+                    ChatColor.GRAY +
+                            "That bounty had already expired the instant you landed the kill — no penalty, no reward."
+            );
             return;
         }
 

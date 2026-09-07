@@ -574,6 +574,10 @@ public class BaseManager {
         private final int width;
         private final int length;
         private final UUID owner;
+        private final int minX;
+        private final int maxX;
+        private final int minZ;
+        private final int maxZ;
         private final List<LogEntry> logs =
                 new ArrayList<>();
 
@@ -607,6 +611,47 @@ public class BaseManager {
                             )
                     );
 
+            /*
+             * Anchor the protected/audited area to the block the
+             * player was standing in, not their exact fractional
+             * coordinate (e.g. x=241.73). The old contains() check
+             * compared that fractional coordinate straight against
+             * whole-block locations, which silently shifted or
+             * clipped up to a full block off the intended area.
+             * That error is barely visible on a big square base
+             * (10x10, 50x50...) but breaks small or rectangular
+             * ones (8x8, 8x9, 5x9 — different width/length per
+             * axis) right at the edges, which matches what was
+             * being reported: base sets fine, edge blocks don't
+             * detect. Computing an explicit, deterministic
+             * min/max per axis guarantees exactly `width` blocks
+             * on X and exactly `length` blocks on Z every time,
+             * regardless of where inside the block the player was
+             * standing when they ran /base set.
+             */
+            int centerBlockX =
+                    this.center.getBlockX();
+
+            int centerBlockZ =
+                    this.center.getBlockZ();
+
+            this.minX =
+                    centerBlockX -
+                            (this.width - 1) / 2;
+
+            this.maxX =
+                    this.minX +
+                            this.width -
+                            1;
+
+            this.minZ =
+                    centerBlockZ -
+                            (this.length - 1) / 2;
+
+            this.maxZ =
+                    this.minZ +
+                            this.length -
+                            1;
         }
 
         public UUID owner() {
@@ -642,21 +687,16 @@ public class BaseManager {
                 return false;
             }
 
-            double halfWidth =
-                    width / 2.0;
+            int blockX =
+                    location.getBlockX();
 
-            double halfLength =
-                    length / 2.0;
+            int blockZ =
+                    location.getBlockZ();
 
-            return Math.abs(
-                    location.getX() -
-                            center.getX()
-            ) <= halfWidth
-                    &&
-                    Math.abs(
-                            location.getZ() -
-                                    center.getZ()
-                    ) <= halfLength;
+            return blockX >= minX &&
+                    blockX <= maxX &&
+                    blockZ >= minZ &&
+                    blockZ <= maxZ;
         }
     }
 }

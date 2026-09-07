@@ -21,6 +21,8 @@ import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.projectiles.ProjectileSource;
 
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.UUID;
 
 public class DuelListener implements Listener {
@@ -32,6 +34,19 @@ public class DuelListener implements Listener {
 
     private final DuelManager duelManager;
     private final RankLadderManager ladder;
+
+    /**
+     * Tracks cumulative damage-per-skill dealt to an outlaw victim by
+     * each attacker who has hit them, outside of any tracked
+     * DuelSession. This lets a bounty claim be judged on the weapon
+     * that did the most work overall (per the "sirf last hit se judge
+     * nhi karna, overall damage dekhkar decide karo" rule) instead of
+     * whatever weapon happened to land the final blow. Keyed by
+     * victim -> attacker -> skill -> total damage. Cleared per-victim
+     * once the outlaw dies (claimed or not) so it never grows stale.
+     */
+    private final Map<UUID, Map<UUID, Map<Skill, Double>>> outlawHuntDamage =
+            new java.util.HashMap<>();
 
     public DuelListener(DuelManager duelManager, RankLadderManager ladder) {
         this.duelManager = duelManager;
@@ -57,6 +72,13 @@ public class DuelListener implements Listener {
                     ladder.getProfile(
                             victim.getUniqueId()
                     );
+
+            recordHuntDamage(
+                    victim.getUniqueId(),
+                    attacker.getUniqueId(),
+                    resolveSkillUsed(event, attacker),
+                    event.getFinalDamage()
+            );
 
             if (
                     ladder.refreshOutlawPenalty(
@@ -94,6 +116,58 @@ public class DuelListener implements Listener {
                 skill,
                 event.getFinalDamage()
         );
+    }
+
+    private void recordHuntDamage(
+            UUID victimUUID,
+            UUID attackerUUID,
+            Skill skill,
+            double damage) {
+
+        if (skill == null || damage <= 0.0) {
+            // Unrecognized weapon (bare hand, off-list tool, etc.) -
+            // deliberately not recorded, so it can never accidentally
+            // become the "dominant" skill for a bounty claim.
+            return;
+        }
+
+        outlawHuntDamage
+                .computeIfAbsent(victimUUID, k -> new java.util.HashMap<>())
+                .computeIfAbsent(attackerUUID, k -> new EnumMap<>(Skill.class))
+                .merge(skill, damage, Double::sum);
+    }
+
+    /**
+     * The skill that contributed the most total damage from this
+     * attacker toward this (outlaw) victim, across the whole hunt -
+     * not just the killing blow. Returns null if nothing was recorded
+     * (e.g. the outlaw died to fall damage, or every hit landed with
+     * an unrecognized weapon).
+     */
+    private Skill resolveOverallHuntSkill(UUID victimUUID, UUID attackerUUID) {
+        Map<UUID, Map<Skill, Double>> byAttacker =
+                outlawHuntDamage.get(victimUUID);
+
+        if (byAttacker == null) return null;
+
+        Map<Skill, Double> bySkill = byAttacker.get(attackerUUID);
+        if (bySkill == null || bySkill.isEmpty()) return null;
+
+        Skill best = null;
+        double bestDamage = -1.0;
+
+        for (Map.Entry<Skill, Double> entry : bySkill.entrySet()) {
+            if (entry.getValue() > bestDamage) {
+                bestDamage = entry.getValue();
+                best = entry.getKey();
+            }
+        }
+
+        return best;
+    }
+
+    private void clearHuntDamage(UUID victimUUID) {
+        outlawHuntDamage.remove(victimUUID);
     }
 
     private Player resolveAttacker(EntityDamageByEntityEvent event) {
@@ -194,6 +268,7 @@ public class DuelListener implements Listener {
                         applyInnocentKillPenalty(killer, loser);
                     }
                 }
+                clearHuntDamage(loser.getUniqueId());
                 return;
             }
 
@@ -208,13 +283,16 @@ public class DuelListener implements Listener {
 
             if (victimProfile.isOutlaw()) {
                 handleOutlawBountyClaim(killer, loser);
+                clearHuntDamage(loser.getUniqueId());
                 return;
             }
 
             applyInnocentKillPenalty(killer, loser);
+            clearHuntDamage(loser.getUniqueId());
             return;
         }
 
+        clearHuntDamage(loser.getUniqueId());
         duelManager.endSession(session);
 
         Skill winnerDominant =
@@ -328,6 +406,16 @@ public class DuelListener implements Listener {
     @EventHandler
     public void onQuit(
             PlayerQuitEvent event) {
+
+        UUID leavingUUID = event.getPlayer().getUniqueId();
+
+        // Prevent a slow leak: drop this player's entry as a hunted
+        // victim, and their contributions inside every other victim's
+        // attacker map.
+        clearHuntDamage(leavingUUID);
+        for (Map<UUID, Map<Skill, Double>> byAttacker : outlawHuntDamage.values()) {
+            byAttacker.remove(leavingUUID);
+        }
 
         DuelSession session =
                 duelManager.getActiveSession(
@@ -490,28 +578,6 @@ public class DuelListener implements Listener {
         );
     }
 
-    /**
-     * Best-effort detection of which weapon actually landed the killing
-     * blow, for cases (bounty claims) that happen outside a tracked
-     * DuelSession and so have no recorded damage history. Mirrors
-     * resolveSkillUsed()'s Arrow-vs-melee handling.
-     */
-    private Skill resolveKillShotSkill(Player killer, Player victim) {
-        org.bukkit.event.entity.EntityDamageEvent lastCause =
-                victim.getLastDamageCause();
-
-        if (
-                lastCause instanceof EntityDamageByEntityEvent lastEntityCause &&
-                        lastEntityCause.getDamager() instanceof Arrow
-        ) {
-            return Skill.BOW;
-        }
-
-        return WeaponUtil.fromItemStack(
-                killer.getInventory().getItemInMainHand()
-        );
-    }
-
     private void applyInnocentKillPenalty(
             Player killer,
             Player victim) {
@@ -615,7 +681,23 @@ public class DuelListener implements Listener {
                                 ChatColor.GRAY +
                                 "in your skill."
                 );
+
+                broadcastBountyTitle(
+                        ChatColor.of("#ff5c33") + "" + ChatColor.BOLD + "☠ BOUNTY",
+                        ChatColor.of("#ffe08a") + "Maaro " + killer.getName() + " — reward: +1 rank"
+                );
             }
+        }
+    }
+
+    /**
+     * Center-screen soft-gradient title popup, used for bounty
+     * lifecycle events (lagna / claim hona / naturally lift hona) so
+     * nobody has to be watching chat to notice.
+     */
+    private void broadcastBountyTitle(String title, String subtitle) {
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            online.sendTitle(title, subtitle, 10, 60, 20);
         }
     }
 
@@ -644,20 +726,86 @@ public class DuelListener implements Listener {
             return;
         }
 
-        // A bounty claim must lock the hunter's skill from the kill weapon
-        // exactly like a normal ranked duel win does (see onDeath, which
-        // calls ladder.assignSkillIfAbsent for the winner). Without this,
-        // a hunter who never had a locked skill yet would hit
-        // claimOutlawBounty() with skill == null, which bails out with no
-        // rank change at all — the exact "avenger gets no rank/swap" bug.
-        if (ladder.getSkill(hunter.getUniqueId()) == null) {
-            Skill killShotSkill = resolveKillShotSkill(hunter, outlaw);
-            if (killShotSkill != null) {
-                ladder.assignSkillIfAbsent(
-                        hunter.getUniqueId(),
-                        killShotSkill
+        // Judge the claim on the weapon that did the most total damage
+        // across the whole hunt, not just whatever landed the final
+        // blow — a hunter can't sword-tag someone at 1 HP with a bow
+        // and have it count as a Bow claim.
+        Skill dominantHuntSkill =
+                resolveOverallHuntSkill(
+                        outlaw.getUniqueId(),
+                        hunter.getUniqueId()
                 );
-            }
+
+        if (dominantHuntSkill == null) {
+            // Nothing usable was recorded (unregistered weapon only,
+            // e.g. bare hand, or the kill came from something outside
+            // melee/bow damage entirely). The outlaw is still dead and
+            // the bounty is still consumed - it just earns no reward.
+            outlawProfile.clearOutlawPenalty();
+            ladder.forgetOutlaw(outlaw.getUniqueId());
+            ladder.adminPersistProfile(outlawProfile);
+
+            hunter.sendMessage(
+                    ChatColor.YELLOW +
+                            "Bounty claimed, but no reward: the kill wasn't landed with a recognized weapon skill."
+            );
+            Bukkit.broadcastMessage(
+                    ChatColor.GOLD + "✦ " + ChatColor.BOLD + "BOUNTY CLAIMED " +
+                            ChatColor.YELLOW + hunter.getName() + ChatColor.GRAY +
+                            " eliminated outlaw " + ChatColor.RED + outlaw.getName() +
+                            ChatColor.GRAY + "."
+            );
+            broadcastBountyTitle(
+                    ChatColor.of("#8fd3a3") + "" + ChatColor.BOLD + "✦ Bounty Lifted",
+                    ChatColor.of("#d9d9d9") + outlaw.getName() + " ki bounty khatam — ab na maara jaye"
+            );
+            return;
+        }
+
+        Skill lockedHunterSkill =
+                ladder.getSkill(hunter.getUniqueId());
+
+        if (lockedHunterSkill != null && lockedHunterSkill != dominantHuntSkill) {
+            // Hunter already has a locked skill and hunted with a
+            // different weapon type - claim is invalid, no reward,
+            // but the bounty is still consumed so it can't be
+            // re-farmed by someone landing the "real" kill next.
+            outlawProfile.clearOutlawPenalty();
+            ladder.forgetOutlaw(outlaw.getUniqueId());
+            ladder.adminPersistProfile(outlawProfile);
+
+            hunter.sendMessage(
+                    ChatColor.YELLOW +
+                            "Bounty claimed, but no reward: you hunted with " +
+                            dominantHuntSkill.getDisplayName() +
+                            ", not your locked skill (" +
+                            lockedHunterSkill.getDisplayName() +
+                            ")."
+            );
+            Bukkit.broadcastMessage(
+                    ChatColor.GOLD + "✦ " + ChatColor.BOLD + "BOUNTY CLAIMED " +
+                            ChatColor.YELLOW + hunter.getName() + ChatColor.GRAY +
+                            " eliminated outlaw " + ChatColor.RED + outlaw.getName() +
+                            ChatColor.GRAY + "."
+            );
+            broadcastBountyTitle(
+                    ChatColor.of("#8fd3a3") + "" + ChatColor.BOLD + "✦ Bounty Lifted",
+                    ChatColor.of("#d9d9d9") + outlaw.getName() + " ki bounty khatam — ab na maara jaye"
+            );
+            return;
+        }
+
+        // A bounty claim must lock the hunter's skill from the overall
+        // dominant hunt weapon exactly like a normal ranked duel win
+        // does (see onDeath, which calls ladder.assignSkillIfAbsent for
+        // the winner). Without this, a hunter who never had a locked
+        // skill yet would hit claimOutlawBounty() with skill == null,
+        // which bails out with no rank change at all.
+        if (lockedHunterSkill == null) {
+            ladder.assignSkillIfAbsent(
+                    hunter.getUniqueId(),
+                    dominantHuntSkill
+            );
         }
 
         Skill hunterSkill =
@@ -676,6 +824,7 @@ public class DuelListener implements Listener {
         // Claim is consumed exactly once so the same outlaw period cannot be
         // farmed for repeated rank rewards after the outlaw respawns.
         outlawProfile.clearOutlawPenalty();
+            ladder.forgetOutlaw(outlaw.getUniqueId());
         ladder.adminPersistProfile(outlawProfile);
 
         if (newTier == oldTier) {
@@ -696,6 +845,10 @@ public class DuelListener implements Listener {
                             outlaw.getName() +
                             ChatColor.GRAY +
                             "."
+            );
+            broadcastBountyTitle(
+                    ChatColor.of("#8fd3a3") + "" + ChatColor.BOLD + "✦ Bounty Lifted",
+                    ChatColor.of("#d9d9d9") + outlaw.getName() + " ki bounty khatam — ab na maara jaye"
             );
             return;
         }
@@ -730,6 +883,11 @@ public class DuelListener implements Listener {
                         "+1 rank " +
                         ChatColor.GRAY +
                         "(" + newTier.getDisplayName() + ")."
+        );
+
+        broadcastBountyTitle(
+                ChatColor.of("#8fd3a3") + "" + ChatColor.BOLD + "✦ Bounty Claimed",
+                ChatColor.of("#d9d9d9") + hunter.getName() + " promoted to " + newTier.getDisplayName()
         );
 
         if (bumped != null) {

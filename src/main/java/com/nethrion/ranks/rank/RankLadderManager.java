@@ -14,9 +14,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class RankLadderManager {
 
@@ -25,6 +28,8 @@ public class RankLadderManager {
 
     private final JavaPlugin plugin;
     private final FileConfiguration config;
+    private final Set<UUID> knownActiveOutlaws = new HashSet<>();
+
     private final Map<UUID, PlayerRankProfile> profiles =
             new HashMap<>();
 
@@ -636,6 +641,57 @@ public class RankLadderManager {
         }
     }
 
+    /**
+     * Meant to run every few seconds. Detects outlaws whose penalty
+     * timer ran out on its own (nobody claimed the bounty in time) and
+     * announces it server-wide with a center-screen title, same as a
+     * successful claim gets - so it's always obvious the "maaro ab"
+     * window has closed and the target is no longer fair game.
+     */
+    public void announceExpiredBounties() {
+        Set<UUID> stillActive = new HashSet<>();
+
+        for (PlayerRankProfile profile : profiles.values()) {
+            if (profile.isOutlaw()) {
+                stillActive.add(profile.getUuid());
+            }
+        }
+
+        for (UUID uuid : knownActiveOutlaws) {
+            if (!stillActive.contains(uuid)) {
+                Player player = Bukkit.getPlayer(uuid);
+                String name =
+                        player != null
+                                ? player.getName()
+                                : "A player";
+
+                for (Player online : Bukkit.getOnlinePlayers()) {
+                    online.sendTitle(
+                            ChatColor.of("#8fd3a3") + "" + ChatColor.BOLD + "✦ Bounty Lifted",
+                            ChatColor.of("#d9d9d9") + name + " ki bounty khatam — ab na maara jaye",
+                            10,
+                            60,
+                            20
+                    );
+                }
+            }
+        }
+
+        knownActiveOutlaws.clear();
+        knownActiveOutlaws.addAll(stillActive);
+    }
+
+    /**
+     * Call whenever an outlaw's penalty ends for a reason OTHER than
+     * the natural timer running out (i.e. a successful bounty claim),
+     * so announceExpiredBounties() doesn't also fire a duplicate
+     * "bounty lifted" title for the same outlaw right after the
+     * "bounty claimed" title already went out.
+     */
+    public void forgetOutlaw(UUID uuid) {
+        knownActiveOutlaws.remove(uuid);
+    }
+
     public void enforceNationalInactivity() {
         for (Skill skill : Skill.values()) {
             PlayerRankProfile national =
@@ -831,6 +887,63 @@ public class RankLadderManager {
                 : highest.getUuid();
     }
 
+    /**
+     * Finds who the loser of a same-tier duel swaps down into: the
+     * highest-kill occupant of the skill's tier directly below the
+     * loser's old tier. If several occupants are tied on kills (this
+     * includes everyone being tied at zero), one of them is chosen
+     * uniformly at random instead of a deterministic tiebreak, per the
+     * "sabhi bandon ka killcount equal ya zero he to system randomly
+     * un dono men se aik ko chune ga" rule.
+     */
+    private UUID findHighestKillOccupantForSeatSwap(
+            Skill skill,
+            RankTier tier,
+            UUID... excluded) {
+
+        int highestKills = -1;
+        List<UUID> tiedHighest = new ArrayList<>();
+
+        for (
+                PlayerRankProfile profile :
+                profiles.values()
+        ) {
+            if (
+                    profile.getSkill() != skill ||
+                            profile.getTier() != tier
+            ) {
+                continue;
+            }
+
+            if (isExcluded(profile.getUuid(), excluded)) {
+                continue;
+            }
+
+            int kills = profile.getKills();
+
+            if (kills > highestKills) {
+                highestKills = kills;
+                tiedHighest.clear();
+                tiedHighest.add(profile.getUuid());
+            } else if (kills == highestKills) {
+                tiedHighest.add(profile.getUuid());
+            }
+        }
+
+        if (tiedHighest.isEmpty()) {
+            return null;
+        }
+
+        if (tiedHighest.size() == 1) {
+            return tiedHighest.get(0);
+        }
+
+        int index =
+                ThreadLocalRandom.current().nextInt(tiedHighest.size());
+
+        return tiedHighest.get(index);
+    }
+
     private int countOccupants(
             Skill skill,
             RankTier tier,
@@ -927,6 +1040,18 @@ public class RankLadderManager {
                 persistProfile(
                         bumpProfile
                 );
+
+                // If the seat being taken over is NATIONAL, the occupant
+                // being bumped out must lose their National weapon here -
+                // otherwise they keep walking around with a permanently
+                // locked, un-droppable National weapon set forever after
+                // losing the rank that justified it, while the new
+                // National also gets a freshly minted copy from the
+                // caller (see resolveDuel's ensureNationalWeapon calls),
+                // leaving two live copies of the same exclusive weapon.
+                if (tier == RankTier.NATIONAL) {
+                    removeAllNationalWeapons(bumped);
+                }
 
                 profile.setSkill(skill);
                 profile.setTier(tier);
@@ -1303,10 +1428,19 @@ public class RankLadderManager {
 
         /*
          * Same tier:
-         * winner moves exactly one tier upward.
-         * If next tier is full, the lowest-kill occupant is
-         * removed to Civillian and the winner takes the seat.
-         * Loser becomes Civillian.
+         * winner moves exactly one tier upward. If that seat is full,
+         * the lowest-kill occupant up there is bumped down to make
+         * room (existing occupy() behaviour).
+         *
+         * The loser does NOT fall all the way to Civillian. Instead the
+         * loser drops one tier, into the seat vacated by whoever was
+         * the highest-kill occupant of that lower tier (in the loser's
+         * skill) - and that occupant swaps UP into the loser's old
+         * seat. If there's no tier below the loser's old tier (i.e.
+         * the loser was E), there is no seat to swap into, so the
+         * loser falls to Civillian - the same floor case as always.
+         * Ties (including everyone tied at zero kills) are broken
+         * randomly rather than deterministically.
          */
         if (winnerOld == loserOld) {
             RankTier next =
@@ -1336,11 +1470,42 @@ public class RankLadderManager {
                 }
             }
 
-            loser.setTier(
-                    RankTier.CIVILLIAN
-            );
-            loser.setSkill(loserSkill);
-            persistProfile(loser);
+            RankTier loserNewTier;
+
+            if (winnerOld == RankTier.E) {
+                // Floor case: nothing below E to swap into.
+                loserNewTier = RankTier.CIVILLIAN;
+
+                loser.setTier(RankTier.CIVILLIAN);
+                loser.setSkill(loserSkill);
+                persistProfile(loser);
+            } else {
+                RankTier below = winnerOld.previous();
+
+                UUID swapPartner =
+                        findHighestKillOccupantForSeatSwap(
+                                loserSkill,
+                                below,
+                                loserUUID
+                        );
+
+                loserNewTier = below;
+
+                loser.setSkill(loserSkill);
+                loser.setTier(below);
+                persistProfile(loser);
+
+                if (swapPartner != null) {
+                    PlayerRankProfile partner =
+                            getProfile(swapPartner);
+
+                    partner.setTier(winnerOld);
+                    persistProfile(partner);
+
+                    bumped.add(swapPartner);
+                    refreshOnlineDisplay(swapPartner);
+                }
+            }
 
             if (next == RankTier.NATIONAL) {
                 markNationalDuel(winnerUUID);
@@ -1357,7 +1522,7 @@ public class RankLadderManager {
                     winnerOld,
                     next,
                     loserOld,
-                    RankTier.CIVILLIAN,
+                    loserNewTier,
                     bumped
             );
         }

@@ -99,6 +99,13 @@ public final class Main extends JavaPlugin {
                 20L * 60L * 5L
         );
 
+        getServer().getScheduler().runTaskTimer(
+                this,
+                rankLadderManager::announceExpiredBounties,
+                20L * 5L,
+                20L * 5L
+        );
+
         getLogger().info(
                 "NethrionRanks enabled. " +
                         "Rank ladder, ranked duels, skill locking, " +

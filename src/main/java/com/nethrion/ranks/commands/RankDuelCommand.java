@@ -120,6 +120,27 @@ public class RankDuelCommand
             return;
         }
 
+        // Without this check, a second challenger silently overwrote the
+        // first challenger's pending invite in the map (same target key),
+        // and the first challenger was never told their invite vanished -
+        // they'd just wait out the 60s never knowing why nobody accepted.
+        if (
+                duelManager.hasAnyPendingInvite(
+                        target.getUniqueId()
+                ) &&
+                        !duelManager.hasPendingInviteFrom(
+                                target.getUniqueId(),
+                                challenger.getUniqueId()
+                        )
+        ) {
+            challenger.sendMessage(
+                    ChatColor.RED +
+                            target.getName() +
+                            " already has a pending challenge from someone else."
+            );
+            return;
+        }
+
         if (
                 !checkEligibility(
                         challenger,

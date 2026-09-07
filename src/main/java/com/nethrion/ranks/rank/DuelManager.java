@@ -51,6 +51,10 @@ public class DuelManager {
         }, 20L * 60L);
     }
 
+    public boolean hasAnyPendingInvite(UUID target) {
+        return pendingInvites.containsKey(target);
+    }
+
     public boolean hasPendingInviteFrom(UUID target, UUID challenger) {
         return challenger.equals(pendingInvites.get(target));
     }

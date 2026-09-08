@@ -32,8 +32,48 @@ public class DuelListener implements Listener {
 
     private static final int MAX_OUTLAW_RESETS = 3;
 
+    /**
+     * "Minimum half-health damage" from the design spec: 5 hearts =
+     * 10 HP (Minecraft counts 2 HP per heart). A non-/rankduel kill
+     * only counts as a rank-affecting "innocent kill" (or a valid
+     * bounty claim) if the killer dealt at least this much damage to
+     * the victim within a single tracked fight window - this stops a
+     * player from tapping someone who is already nearly dead from
+     * something else and having that count as a real kill for
+     * swap/bounty purposes. Applies to every rank, not just National.
+     */
+    private static final double MINIMUM_KILL_DAMAGE = 10.0;
+
+    /**
+     * If no hit lands between the same attacker and victim for this
+     * long, their tracked fight damage resets to zero on the next hit
+     * instead of continuing to accumulate - otherwise unrelated pokes
+     * hours apart would eventually add up to a "kill" neither side was
+     * actually fighting for.
+     */
+    private static final long FIGHT_WINDOW_RESET_MILLIS = 20_000L;
+
     private final DuelManager duelManager;
     private final RankLadderManager ladder;
+
+    /**
+     * Tracks cumulative damage dealt by each attacker to each victim
+     * OUTSIDE of any tracked DuelSession, decaying per-pair after
+     * {@link #FIGHT_WINDOW_RESET_MILLIS} of no hits, purely to answer
+     * "did this specific fight cross the minimum-half-health-damage
+     * threshold". Keyed by victim -> attacker -> tracker. This is
+     * intentionally separate from outlawHuntDamage (which only starts
+     * recording once the victim is ALREADY an outlaw, and is used to
+     * judge which weapon/skill a bounty claim belongs to, not whether
+     * the kill counts at all).
+     */
+    private final Map<UUID, Map<UUID, FightDamageTracker>> nonDuelFightDamage =
+            new java.util.HashMap<>();
+
+    private static final class FightDamageTracker {
+        double totalDamage;
+        long lastHitMillis;
+    }
 
     /**
      * Tracks cumulative damage-per-skill dealt to an outlaw victim by
@@ -59,6 +99,18 @@ public class DuelListener implements Listener {
 
         Player attacker = resolveAttacker(event);
         if (attacker == null) return;
+
+        if (
+                !attacker.getUniqueId().equals(
+                        victim.getUniqueId()
+                )
+        ) {
+            recordNonDuelFightDamage(
+                    victim.getUniqueId(),
+                    attacker.getUniqueId(),
+                    event.getFinalDamage()
+            );
+        }
 
         if (
                 !attacker.getUniqueId().equals(
@@ -116,6 +168,59 @@ public class DuelListener implements Listener {
                 skill,
                 event.getFinalDamage()
         );
+    }
+
+    private void recordNonDuelFightDamage(
+            UUID victimUUID,
+            UUID attackerUUID,
+            double damage) {
+
+        if (damage <= 0.0) return;
+
+        long now = System.currentTimeMillis();
+
+        FightDamageTracker tracker =
+                nonDuelFightDamage
+                        .computeIfAbsent(victimUUID, k -> new java.util.HashMap<>())
+                        .computeIfAbsent(attackerUUID, k -> new FightDamageTracker());
+
+        if (now - tracker.lastHitMillis > FIGHT_WINDOW_RESET_MILLIS) {
+            tracker.totalDamage = 0.0;
+        }
+
+        tracker.totalDamage += damage;
+        tracker.lastHitMillis = now;
+    }
+
+    /**
+     * True if this attacker dealt at least the minimum half-health
+     * damage (see {@link #MINIMUM_KILL_DAMAGE}) to this victim within
+     * the still-active fight window, right up to the moment of death.
+     */
+    private boolean metMinimumKillDamage(
+            UUID victimUUID,
+            UUID attackerUUID) {
+
+        Map<UUID, FightDamageTracker> byAttacker =
+                nonDuelFightDamage.get(victimUUID);
+
+        if (byAttacker == null) return false;
+
+        FightDamageTracker tracker = byAttacker.get(attackerUUID);
+        if (tracker == null) return false;
+
+        long now = System.currentTimeMillis();
+        if (now - tracker.lastHitMillis > FIGHT_WINDOW_RESET_MILLIS) {
+            // The fight window had already lapsed before the kill -
+            // whatever was accumulated no longer counts.
+            return false;
+        }
+
+        return tracker.totalDamage >= MINIMUM_KILL_DAMAGE;
+    }
+
+    private void clearNonDuelFightDamage(UUID victimUUID) {
+        nonDuelFightDamage.remove(victimUUID);
     }
 
     private void recordHuntDamage(
@@ -257,18 +362,24 @@ public class DuelListener implements Listener {
 
                 // The duel is handled. If there was a genuine third-party
                 // killer, their kill is still a separate event (innocent
-                // kill / bounty claim) and must go through the normal path.
+                // kill / bounty claim) and must go through the normal path
+                // - gated on the minimum half-health damage threshold.
                 if (killer != null) {
-                    PlayerRankProfile victimProfile =
-                            ladder.getProfile(loser.getUniqueId());
+                    if (metMinimumKillDamage(loser.getUniqueId(), killer.getUniqueId())) {
+                        PlayerRankProfile victimProfile =
+                                ladder.getProfile(loser.getUniqueId());
 
-                    if (victimProfile.isOutlaw()) {
-                        handleOutlawBountyClaim(killer, loser);
+                        if (victimProfile.isOutlaw()) {
+                            handleOutlawBountyClaim(killer, loser);
+                        } else {
+                            applyInnocentKillPenalty(killer, loser);
+                        }
                     } else {
-                        applyInnocentKillPenalty(killer, loser);
+                        notifyKillBelowThreshold(killer, loser);
                     }
                 }
                 clearHuntDamage(loser.getUniqueId());
+                clearNonDuelFightDamage(loser.getUniqueId());
                 return;
             }
 
@@ -278,21 +389,36 @@ public class DuelListener implements Listener {
             // Loser wasn't in any duel at all.
             if (killer == null) return;
 
+            // "Kill declare" only happens once the killer dealt at least
+            // half-health damage in this specific fight - see the
+            // MINIMUM_KILL_DAMAGE Javadoc. Below that, the death has zero
+            // rank consequences: no swap, no outlaw penalty, no bounty
+            // claim, for ANY rank (not just National).
+            if (!metMinimumKillDamage(loser.getUniqueId(), killer.getUniqueId())) {
+                notifyKillBelowThreshold(killer, loser);
+                clearHuntDamage(loser.getUniqueId());
+                clearNonDuelFightDamage(loser.getUniqueId());
+                return;
+            }
+
             PlayerRankProfile victimProfile =
                     ladder.getProfile(loser.getUniqueId());
 
             if (victimProfile.isOutlaw()) {
                 handleOutlawBountyClaim(killer, loser);
                 clearHuntDamage(loser.getUniqueId());
+                clearNonDuelFightDamage(loser.getUniqueId());
                 return;
             }
 
             applyInnocentKillPenalty(killer, loser);
             clearHuntDamage(loser.getUniqueId());
+            clearNonDuelFightDamage(loser.getUniqueId());
             return;
         }
 
         clearHuntDamage(loser.getUniqueId());
+        clearNonDuelFightDamage(loser.getUniqueId());
         duelManager.endSession(session);
 
         Skill winnerDominant =
@@ -414,6 +540,11 @@ public class DuelListener implements Listener {
         // attacker map.
         clearHuntDamage(leavingUUID);
         for (Map<UUID, Map<Skill, Double>> byAttacker : outlawHuntDamage.values()) {
+            byAttacker.remove(leavingUUID);
+        }
+
+        clearNonDuelFightDamage(leavingUUID);
+        for (Map<UUID, FightDamageTracker> byAttacker : nonDuelFightDamage.values()) {
             byAttacker.remove(leavingUUID);
         }
 
@@ -575,6 +706,23 @@ public class DuelListener implements Listener {
 
         ladder.refreshOnlineDisplay(
                 winner.getUniqueId()
+        );
+    }
+
+    /**
+     * A kill outside /rankduel that did not reach the minimum
+     * half-health damage threshold in this fight - no rank swap, no
+     * outlaw penalty, no bounty claim. Quiet by design: this is meant
+     * to look and feel like an ordinary death, not a punished or
+     * rewarded event.
+     */
+    private void notifyKillBelowThreshold(
+            Player killer,
+            Player victim) {
+
+        killer.sendActionBar(
+                ChatColor.GRAY +
+                        "Kill not declared: not enough damage dealt in this fight."
         );
     }
 
@@ -818,6 +966,12 @@ public class DuelListener implements Listener {
                         hunter.getUniqueId()
                 );
 
+        // Every legitimate bounty claim increments /kills and /killtop
+        // regardless of whether a rank promotion actually happened -
+        // including once the hunter is already capped at S, where the
+        // chain no longer promotes toward National but kills still count.
+        ladder.addKill(hunter.getUniqueId());
+
         RankTier newTier =
                 ladder.getTier(hunter.getUniqueId());
 
@@ -897,10 +1051,24 @@ public class DuelListener implements Listener {
                         ChatColor.YELLOW +
                                 "Your rank changed because the bounty reward filled your seat."
                 );
+
+                displaced.sendTitle(
+                        ChatColor.YELLOW + "" + ChatColor.BOLD + "RANK CHANGED",
+                        ChatColor.GRAY + "Seat filled by a bounty claim",
+                        10, 60, 10
+                );
             }
         }
     }
 
+    /**
+     * Fixed outlaw effects - always Weakness II (amplifier 1) and
+     * Slowness I (amplifier 0), regardless of how many times this
+     * outlaw period has been refreshed. Deliberately NOT scaled with
+     * outlawResetCount/outlawLevel - the penalty's job is to make the
+     * outlaw catchable, not to punish them progressively harder the
+     * longer they survive.
+     */
     private void applyOutlawEffects(
             Player player,
             PlayerRankProfile profile) {
@@ -909,10 +1077,7 @@ public class DuelListener implements Listener {
                 new org.bukkit.potion.PotionEffect(
                         org.bukkit.potion.PotionEffectType.WEAKNESS,
                         20 * 60 * 3,
-                        Math.max(
-                                0,
-                                profile.getOutlawLevel() - 1
-                        ),
+                        1,
                         false,
                         true,
                         true
@@ -923,10 +1088,7 @@ public class DuelListener implements Listener {
                 new org.bukkit.potion.PotionEffect(
                         org.bukkit.potion.PotionEffectType.SLOWNESS,
                         20 * 60 * 3,
-                        Math.max(
-                                0,
-                                profile.getOutlawLevel() - 1
-                        ),
+                        0,
                         false,
                         true,
                         true
@@ -1003,6 +1165,12 @@ public class DuelListener implements Listener {
                 player.sendMessage(
                         ChatColor.YELLOW +
                                 "Your rank changed because the ladder was rebalanced."
+                );
+
+                player.sendTitle(
+                        ChatColor.YELLOW + "" + ChatColor.BOLD + "RANK CHANGED",
+                        ChatColor.GRAY + "Seat rebalanced by a duel result",
+                        10, 60, 10
                 );
             }
         }

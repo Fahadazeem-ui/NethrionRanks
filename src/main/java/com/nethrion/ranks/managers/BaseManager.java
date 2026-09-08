@@ -19,6 +19,16 @@ public class BaseManager {
     public static final int MAX_DIMENSION = 50;
     public static final int MAX_SLOTS = 3;
 
+    /**
+     * Log lines older than this vanish automatically. Applied lazily
+     * (on every read/write that touches a base's log list) rather than
+     * via a strict per-second sweep - cheap and always correct by the
+     * time anyone actually looks at the logs, and also swept
+     * periodically (see Main's scheduled task) so memory/config don't
+     * quietly keep growing on a base nobody ever queries again.
+     */
+    public static final long LOG_EXPIRY_MILLIS = 3L * 24L * 60L * 60L * 1000L;
+
     private final JavaPlugin plugin;
     private final FileConfiguration config;
 
@@ -428,14 +438,67 @@ public class BaseManager {
             return;
         }
 
+        purgeExpiredLogs(base);
         base.logs.add(entry);
         persistOwner(owner);
+    }
+
+    /**
+     * Removes any log line older than {@link #LOG_EXPIRY_MILLIS} from
+     * this base's in-memory log list. Does NOT persist by itself -
+     * callers that need the removal saved to disk call persistOwner
+     * afterward (addLog does; the periodic sweep below does its own).
+     */
+    private void purgeExpiredLogs(BaseDefinition base) {
+        long now = System.currentTimeMillis();
+        base.logs.removeIf(
+                log -> now - log.getTimestamp() > LOG_EXPIRY_MILLIS
+        );
+    }
+
+    /**
+     * Meant to run every so often (see Main's scheduled task) so log
+     * entries don't just sit in memory/config forever on a base nobody
+     * queries again after the fact - without this, expiry would only
+     * ever be enforced lazily on read/write, which is correct but lets
+     * genuinely dead data linger indefinitely in the config file.
+     */
+    public void purgeAllExpiredLogs() {
+        for (Map.Entry<UUID, Map<Integer, BaseDefinition>> ownerEntry :
+                bases.entrySet()) {
+
+            for (BaseDefinition base : ownerEntry.getValue().values()) {
+                int before = base.logs.size();
+                purgeExpiredLogs(base);
+                if (base.logs.size() != before) {
+                    persistOwner(ownerEntry.getKey());
+                }
+            }
+        }
     }
 
     public List<LogEntry> getLogs(
             UUID owner,
             Integer slot,
             Long sinceMillis) {
+
+        return getLogs(owner, slot, sinceMillis, null);
+    }
+
+    /**
+     * @param keyword optional case-insensitive substring filter. Does
+     *                NOT need to match the item/action name exactly -
+     *                a log line matches if the keyword appears
+     *                anywhere in its action type, item/block name, or
+     *                player name (so "iron" matches "Iron Chestplate",
+     *                "Iron Ore", "IRON_SWORD", etc. without the caller
+     *                needing to know the exact internal name).
+     */
+    public List<LogEntry> getLogs(
+            UUID owner,
+            Integer slot,
+            Long sinceMillis,
+            String keyword) {
 
         BaseDefinition base =
                 getBaseAt(
@@ -447,25 +510,51 @@ public class BaseManager {
             return List.of();
         }
 
+        purgeExpiredLogs(base);
+
         List<LogEntry> result =
                 new ArrayList<>();
 
         long now =
                 System.currentTimeMillis();
 
+        String lowerKeyword =
+                (keyword == null || keyword.isBlank())
+                        ? null
+                        : keyword.toLowerCase(java.util.Locale.ROOT);
+
         for (LogEntry log :
                 base.logs) {
 
             if (
-                    sinceMillis == null ||
-                            now - log.getTimestamp()
-                                    <= sinceMillis
+                    sinceMillis != null &&
+                            now - log.getTimestamp() > sinceMillis
             ) {
-                result.add(log);
+                continue;
             }
+
+            if (
+                    lowerKeyword != null &&
+                            !matchesKeyword(log, lowerKeyword)
+            ) {
+                continue;
+            }
+
+            result.add(log);
         }
 
         return result;
+    }
+
+    private boolean matchesKeyword(LogEntry log, String lowerKeyword) {
+        return containsIgnoreCase(log.getItemOrBlockName(), lowerKeyword) ||
+                containsIgnoreCase(log.getActionType(), lowerKeyword) ||
+                containsIgnoreCase(log.getPlayerName(), lowerKeyword);
+    }
+
+    private boolean containsIgnoreCase(String haystack, String lowerNeedle) {
+        return haystack != null &&
+                haystack.toLowerCase(java.util.Locale.ROOT).contains(lowerNeedle);
     }
 
     public static boolean validDimension(

@@ -8,6 +8,20 @@ public class PlayerRankProfile {
 
     private final UUID uuid;
     private Skill skill;
+
+    /**
+     * The second skill a National holder has won off another National in
+     * a cross-skill /rankduel (e.g. a SwordMaster who beats an AxeMaster's
+     * National in a cross-skill challenge becomes "National SwordAxeMaster").
+     * Only ever set while {@code tier == NATIONAL}; a maximum of ONE
+     * secondary skill is allowed (a player can hold at most 2 skills total,
+     * and only ever gains them via National-vs-National cross-skill wins -
+     * see RankLadderManager#resolveDuel). Cleared automatically the moment
+     * the player is no longer National (see setTier), because the combined
+     * title has no meaning outside National.
+     */
+    private Skill secondarySkill;
+
     private RankTier tier = RankTier.CIVILLIAN;
     private int kills;
     private long lastNationalDuelTimestamp;
@@ -28,10 +42,38 @@ public class PlayerRankProfile {
 
     public boolean hasSkill() { return skill != null; }
 
+    public Skill getSecondarySkill() { return secondarySkill; }
+
+    /**
+     * Only meaningful while National. Silently refuses to set a
+     * secondary skill equal to the primary skill (that isn't a second
+     * skill at all) - callers should already guard against this, but
+     * this is the last line of defense against a corrupt double-title.
+     */
+    public void setSecondarySkill(Skill secondarySkill) {
+        if (secondarySkill != null && secondarySkill == this.skill) {
+            return;
+        }
+        this.secondarySkill = secondarySkill;
+    }
+
+    public boolean hasSecondarySkill() { return secondarySkill != null; }
+
+    /** True once this player already holds the maximum of 2 skills. */
+    public boolean isAtSkillCap() { return secondarySkill != null; }
+
     public RankTier getTier() { return tier; }
 
     public void setTier(RankTier tier) {
         this.tier = tier == null ? RankTier.CIVILLIAN : tier;
+
+        // The combined double-title only exists for an active National.
+        // The instant a player leaves National (demoted, swapped out,
+        // reset), any second skill they'd won is meaningless - clear it
+        // so a future re-promotion never resurrects a stale combination.
+        if (this.tier != RankTier.NATIONAL) {
+            this.secondarySkill = null;
+        }
     }
 
     public int getKills() { return kills; }
@@ -227,6 +269,25 @@ public class PlayerRankProfile {
 
         return tier.getDisplayName() +
                 " " +
-                skill.getMasterTitle();
+                getMasterTitle();
+    }
+
+    /**
+     * The plain master title, e.g. "SwordMaster", or the combined
+     * double title for a National who has won a cross-skill challenge,
+     * e.g. "SwordAxeMaster" - skills joined in the order they were won
+     * (primary first, secondary second), sharing a single trailing
+     * "Master" rather than "SwordMasterAxeMaster".
+     */
+    public String getMasterTitle() {
+        if (skill == null) return "";
+
+        if (secondarySkill == null || tier != RankTier.NATIONAL) {
+            return skill.getMasterTitle();
+        }
+
+        return skill.getDisplayName() +
+                secondarySkill.getDisplayName() +
+                "Master";
     }
 }

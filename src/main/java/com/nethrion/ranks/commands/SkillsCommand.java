@@ -41,16 +41,130 @@ public class SkillsCommand
         ) {
             showBoard(sender);
         } else if (
+                args.length > 0 &&
+                        args[0].equalsIgnoreCase("list")
+        ) {
+            showSkillNameList(sender);
+        } else if (
+                args.length > 0 &&
+                        args[0].equalsIgnoreCase("top")
+        ) {
+            showTop(sender);
+        } else if (
                 sender instanceof Player player
         ) {
             showSkills(player);
         } else {
             sender.sendMessage(
-                    "Use /skills board."
+                    "Use /skills board, /skills list, or /skills top."
             );
         }
 
         return true;
+    }
+
+    /**
+     * /skills list — just the skill names themselves, bold + a neon
+     * color, no rank-holder names attached (per spec: "sirf skills
+     * name show honge skil holder names nhi").
+     */
+    private void showSkillNameList(
+            CommandSender sender) {
+
+        sender.sendMessage(
+                ChatColor.DARK_GRAY +
+                        "════════ " +
+                        ChatColor.GOLD +
+                        " SKILLS " +
+                        ChatColor.DARK_GRAY +
+                        "════════"
+        );
+
+        for (Skill skill : Skill.values()) {
+            sender.sendMessage(
+                    ChatColor.of("#39FF14") +
+                            "" +
+                            ChatColor.BOLD +
+                            skill.getMasterTitle()
+            );
+        }
+
+        sender.sendMessage(
+                ChatColor.DARK_GRAY +
+                        "════════════════════════════════"
+        );
+    }
+
+    /**
+     * /skills top — the highest ranker(s) of each skill. A skill with
+     * no rank holder at all is skipped entirely (per spec: "agar kisi
+     * skill ka koi ranker he hi nhi to vo /skills top men show hi
+     * nhi hogi"). If several players are tied for #1 (same tier AND
+     * same kill count), every tied name is listed together.
+     */
+    private void showTop(
+            CommandSender sender) {
+
+        sender.sendMessage(
+                ChatColor.DARK_GRAY +
+                        "════════ " +
+                        ChatColor.GOLD +
+                        " SKILLS TOP " +
+                        ChatColor.DARK_GRAY +
+                        "════════"
+        );
+
+        boolean anyShown = false;
+
+        for (Skill skill : Skill.values()) {
+            List<PlayerRankProfile> top =
+                    ladder.getTopPlayersForSkill(skill);
+
+            if (top.isEmpty()) {
+                // Deliberately not shown at all - no ranker exists yet.
+                continue;
+            }
+
+            anyShown = true;
+
+            StringBuilder names = new StringBuilder();
+            for (int i = 0; i < top.size(); i++) {
+                PlayerRankProfile profile = top.get(i);
+
+                String name =
+                        Bukkit.getOfflinePlayer(profile.getUuid()).getName();
+                if (name == null) name = "Unknown";
+
+                if (i > 0) names.append(ChatColor.GRAY).append(", ");
+
+                names.append(ChatColor.WHITE)
+                        .append(name)
+                        .append(ChatColor.GRAY)
+                        .append(" (")
+                        .append(profile.getTier().getDisplayName())
+                        .append(" rank)");
+            }
+
+            sender.sendMessage(
+                    ChatColor.AQUA +
+                            skill.getMasterTitle() +
+                            ChatColor.DARK_GRAY +
+                            " - " +
+                            names
+            );
+        }
+
+        if (!anyShown) {
+            sender.sendMessage(
+                    ChatColor.GRAY +
+                            "No skill has a ranker yet."
+            );
+        }
+
+        sender.sendMessage(
+                ChatColor.DARK_GRAY +
+                        "════════════════════════════════"
+        );
     }
 
     private void showSkills(
@@ -200,9 +314,16 @@ public class SkillsCommand
                             Locale.ROOT
                     );
 
-            if ("board".startsWith(token)) {
-                return List.of("board");
+            List<String> options =
+                    java.util.List.of("board", "list", "top");
+
+            List<String> matches = new java.util.ArrayList<>();
+            for (String option : options) {
+                if (option.startsWith(token)) {
+                    matches.add(option);
+                }
             }
+            return matches;
         }
 
         return List.of();

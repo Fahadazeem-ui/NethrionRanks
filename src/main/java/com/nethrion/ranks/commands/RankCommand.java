@@ -491,37 +491,20 @@ public class RankCommand
             skill = Skill.SWORD;
         }
 
-        PlayerRankProfile profile =
-                ladder.getProfile(
-                        target.getUniqueId()
+        String rejection =
+                ladder.adminSetRank(
+                        target.getUniqueId(),
+                        tier,
+                        skill
                 );
 
-        profile.setSkill(skill);
-        profile.setTier(tier);
-
-        if (
-                tier ==
-                        RankTier.NATIONAL
-        ) {
-            profile.setLastNationalDuelTimestamp(
-                    System.currentTimeMillis()
+        if (rejection != null) {
+            sender.sendMessage(
+                    ChatColor.RED +
+                            rejection
             );
-            ladder.ensureNationalWeapon(
-                    target.getUniqueId(),
-                    skill
-            );
+            return;
         }
-
-        /*
-         * We intentionally persist through the public state path by
-         * changing a harmless XP value only when required. The ladder
-         * manager's persistence is private, so use its admin setter.
-         */
-        ladder.adminPersistProfile(profile);
-
-        ladder.refreshOnlineDisplay(
-                target.getUniqueId()
-        );
 
         sender.sendMessage(
                 ChatColor.GREEN +
@@ -666,6 +649,29 @@ public class RankCommand
             sender.sendMessage(
                     ChatColor.RED +
                             "Invalid skill or tier."
+            );
+            return;
+        }
+
+        // National weapons are exclusive proof-of-rank items. Even an
+        // OP admin cannot hand one to someone else for testing - only
+        // to themselves, if they're the one running the command (i.e.
+        // testing on their own character). Everyone else's National
+        // weapon must come only from actually holding the National
+        // rank (see RankLadderManager#ensureNationalWeapon).
+        if (
+                tier == RankTier.NATIONAL &&
+                        !(
+                                sender instanceof Player senderPlayer &&
+                                        senderPlayer.getUniqueId().equals(
+                                                target.getUniqueId()
+                                        )
+                        )
+        ) {
+            sender.sendMessage(
+                    ChatColor.RED +
+                            "National weapons can only be given to yourself " +
+                            "(for testing), never to another player."
             );
             return;
         }

@@ -275,6 +275,7 @@ public class BaseCommand
 
         int slot = 1;
         Long sinceMillis = null;
+        StringBuilder keywordBuilder = new StringBuilder();
 
         if (args.length >= 2) {
             try {
@@ -283,35 +284,38 @@ public class BaseCommand
                                 args[1]
                         );
             } catch (NumberFormatException exception) {
-                sinceMillis =
-                        parseTimeToMillis(
-                                args[1]
-                        );
-
-                if (sinceMillis == null) {
-                    player.sendMessage(
-                            ChatColor.YELLOW +
-                                    "Use: /base logs <slot> [30m|2h|1d]"
-                    );
-                    return;
+                // Not a slot number - treat it as either a time token
+                // or the start of a keyword (resolved below).
+                Long parsedTime = parseTimeToMillis(args[1]);
+                if (parsedTime != null) {
+                    sinceMillis = parsedTime;
+                } else {
+                    keywordBuilder.append(args[1]);
                 }
             }
         }
 
-        if (args.length >= 3) {
-            sinceMillis =
-                    parseTimeToMillis(
-                            args[2]
-                    );
-
-            if (sinceMillis == null) {
-                player.sendMessage(
-                        ChatColor.RED +
-                                "Invalid time. Example: 30m, 2h, 1d."
-                );
-                return;
+        // Every remaining token (from index 2 onward) is either the
+        // time filter (30m/2h/1d) or part of the keyword - a keyword
+        // does NOT need to be one exact word, so multiple trailing
+        // tokens are joined back together with spaces.
+        for (int i = 2; i < args.length; i++) {
+            Long parsedTime = parseTimeToMillis(args[i]);
+            if (parsedTime != null && sinceMillis == null) {
+                sinceMillis = parsedTime;
+                continue;
             }
+
+            if (keywordBuilder.length() > 0) {
+                keywordBuilder.append(' ');
+            }
+            keywordBuilder.append(args[i]);
         }
+
+        String keyword =
+                keywordBuilder.length() > 0
+                        ? keywordBuilder.toString()
+                        : null;
 
         if (
                 !baseManager.hasBase(
@@ -330,7 +334,8 @@ public class BaseCommand
                 baseManager.getLogs(
                         player.getUniqueId(),
                         slot,
-                        sinceMillis
+                        sinceMillis,
+                        keyword
                 );
 
         if (logs.isEmpty()) {
@@ -345,7 +350,15 @@ public class BaseCommand
                 ChatColor.GOLD +
                         "===== BASE " +
                         slot +
-                        " AUDIT ====="
+                        " AUDIT" +
+                        (
+                                keyword == null
+                                        ? ""
+                                        : ChatColor.GRAY + " (keyword: " +
+                                        ChatColor.WHITE + keyword +
+                                        ChatColor.GOLD + ")"
+                        ) +
+                        " ====="
         );
 
         for (LogEntry entry :
@@ -400,6 +413,13 @@ public class BaseCommand
                         "/base logs 1 2h" +
                         ChatColor.GRAY +
                         " — activity audit"
+        );
+
+        player.sendMessage(
+                ChatColor.YELLOW +
+                        "/base logs 1 iron" +
+                        ChatColor.GRAY +
+                        " — audit filtered by keyword"
         );
 
         player.sendMessage(

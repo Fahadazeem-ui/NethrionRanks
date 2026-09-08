@@ -106,6 +106,17 @@ public final class Main extends JavaPlugin {
                 20L * 5L
         );
 
+        // Base logs auto-expire after 3 days; this periodic sweep keeps
+        // that from only happening lazily on read/write, so genuinely
+        // stale entries don't linger in memory/config indefinitely on
+        // a base nobody queries again.
+        getServer().getScheduler().runTaskTimer(
+                this,
+                baseManager::purgeAllExpiredLogs,
+                20L * 60L * 30L,
+                20L * 60L * 30L
+        );
+
         getLogger().info(
                 "NethrionRanks enabled. " +
                         "Rank ladder, ranked duels, skill locking, " +

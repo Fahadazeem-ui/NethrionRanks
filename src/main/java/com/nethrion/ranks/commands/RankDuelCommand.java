@@ -254,18 +254,38 @@ public class RankDuelCommand
         }
 
         /*
-         * Cross-skill non-National fights are only allowed
-         * at exactly the same tier.
+         * Cross-skill duels are valid ONLY between two Nationals.
+         * Every other cross-skill combination is rejected outright -
+         * including same-tier cross-skill (E vs E different skill,
+         * S vs S different skill, etc.). Only a matching-skill duel
+         * is allowed below National.
+         */
+        if (aSkill != bSkill && !(aNational && bNational)) {
+            a.sendMessage(
+                    ChatColor.RED +
+                            "Cross-skill duel sirf National vs National mein valid hai."
+            );
+            return false;
+        }
+
+        /*
+         * S vs S, same skill, neither side National: the winner does
+         * NOT auto-reach National off a normal duel - that seat can
+         * only ever be taken by directly challenging the current
+         * National. Block the match at the command level so nobody
+         * even starts a fight that couldn't resolve into a promotion.
          */
         if (
-                aSkill != bSkill &&
+                aTier == RankTier.S &&
+                        bTier == RankTier.S &&
+                        aSkill == bSkill &&
                         !aNational &&
-                        !bNational &&
-                        aTier != bTier
+                        !bNational
         ) {
             a.sendMessage(
                     ChatColor.RED +
-                            "Cross-skill duel sirf same rank tier par allowed hai."
+                            "S vs S duel National promotion nahi deti. " +
+                            "National ko directly challenge karo."
             );
             return false;
         }

@@ -40,6 +40,13 @@ public class RankDisplayListener implements Listener {
     public void refresh(Player player) {
         if (player == null) return;
 
+        // Correct any National weapon mismatch that could only have
+        // happened while this player was offline (admin rank change,
+        // an offline duel resolution, etc.) before refreshing display.
+        ladder.enforceWeaponCorrectnessOnJoin(
+                player.getUniqueId()
+        );
+
         ladder.refreshOnlineDisplay(
                 player.getUniqueId()
         );

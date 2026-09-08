@@ -81,6 +81,23 @@ public class RankLadderManager {
                         )
                 );
 
+                String secondarySkillName =
+                        section.getString(
+                                uuidString + ".secondarySkill",
+                                "NONE"
+                        );
+
+                if (!"NONE".equalsIgnoreCase(secondarySkillName)) {
+                    try {
+                        profile.setSecondarySkill(
+                                Skill.valueOf(secondarySkillName)
+                        );
+                    } catch (IllegalArgumentException ignored) {
+                        // Corrupt/renamed skill enum value - drop it
+                        // rather than fail loading the whole profile.
+                    }
+                }
+
                 profile.setKills(
                         section.getInt(
                                 uuidString + ".kills",
@@ -156,6 +173,13 @@ public class RankLadderManager {
         config.set(
                 path + ".tier",
                 profile.getTier().name()
+        );
+
+        config.set(
+                path + ".secondarySkill",
+                profile.hasSecondarySkill()
+                        ? profile.getSecondarySkill().name()
+                        : "NONE"
         );
 
         config.set(
@@ -411,7 +435,16 @@ public class RankLadderManager {
         Skill skill = hunter.getSkill();
         RankTier oldTier = hunter.getTier();
 
-        if (skill == null || oldTier == RankTier.NATIONAL) {
+        // The bounty-promotion chain caps at S. A hunter already at S (or
+        // National, which can't happen here anyway) only gets their kill
+        // count incremented by the caller - never a free ride to
+        // National, which must always be earned through a direct
+        // /rankduel challenge against the current National.
+        if (
+                skill == null ||
+                        oldTier == RankTier.NATIONAL ||
+                        oldTier == RankTier.S
+        ) {
             return null;
         }
 
@@ -462,6 +495,94 @@ public class RankLadderManager {
 
         refreshOnlineDisplay(hunterUUID);
         return bumped;
+    }
+
+    /**
+     * Admin-facing /rank set, now properly obeying the same seat-slot
+     * limits as every organic rank change. An admin is NOT allowed to
+     * force two players into the same skill+tier seat when it's already
+     * full - per design, they must free the seat (e.g. /rank remove the
+     * current occupant, or set them to a different tier/skill) first.
+     * The one exception baked into the rules themselves: CIVILLIAN has
+     * no slot cap (getSlotsPerSkill() == -1 for it), so that branch is
+     * always allowed.
+     *
+     * @return null on success, or a human-readable rejection reason.
+     */
+    public String adminSetRank(
+            UUID targetUuid,
+            RankTier tier,
+            Skill skill) {
+
+        if (targetUuid == null || tier == null) {
+            return "Invalid target or tier.";
+        }
+
+        PlayerRankProfile target = getProfile(targetUuid);
+
+        if (tier == RankTier.CIVILLIAN) {
+            if (target.getTier() == RankTier.NATIONAL) {
+                removeAllNationalWeapons(targetUuid);
+            }
+            target.setSkill(skill);
+            target.setTier(RankTier.CIVILLIAN);
+            persistProfile(target);
+            refreshOnlineDisplay(targetUuid);
+            return null;
+        }
+
+        if (skill == null) {
+            return "A skill is required for any ranked tier.";
+        }
+
+        // Already sitting in exactly this seat - no-op, always fine
+        // (covers "re-running the same /rank set" or refreshing weapon
+        // state without needing to bump anyone).
+        boolean alreadyHere =
+                target.getTier() == tier && target.getSkill() == skill;
+
+        if (!alreadyHere) {
+            int occupantsExcludingTarget =
+                    countOccupants(skill, tier, targetUuid);
+
+            if (occupantsExcludingTarget >= tier.getSlotsPerSkill()) {
+                UUID existingOccupant =
+                        findLowestKillOccupant(skill, tier, targetUuid);
+
+                String occupantName =
+                        existingOccupant != null
+                                ? Bukkit.getOfflinePlayer(existingOccupant).getName()
+                                : "someone";
+
+                return "Seat full: " + tier.getDisplayName() + " " +
+                        skill.getMasterTitle() + " already has " +
+                        occupantsExcludingTarget + "/" + tier.getSlotsPerSkill() +
+                        " occupants (e.g. " + occupantName + "). " +
+                        "Change/remove their rank first.";
+            }
+        }
+
+        boolean wasNational = target.getTier() == RankTier.NATIONAL;
+
+        if (wasNational && tier != RankTier.NATIONAL) {
+            removeAllNationalWeapons(targetUuid);
+        }
+
+        target.setSkill(skill);
+        target.setTier(tier);
+
+        if (tier == RankTier.NATIONAL) {
+            target.setLastNationalDuelTimestamp(System.currentTimeMillis());
+        }
+
+        persistProfile(target);
+
+        if (tier == RankTier.NATIONAL) {
+            ensureNationalWeapon(targetUuid, skill);
+        }
+
+        refreshOnlineDisplay(targetUuid);
+        return null;
     }
 
     public void addKill(UUID uuid) {
@@ -569,38 +690,70 @@ public class RankLadderManager {
     public PlayerRankProfile getTopPlayerForSkill(
             Skill skill) {
 
-        PlayerRankProfile best = null;
+        List<PlayerRankProfile> top =
+                getTopPlayersForSkill(skill);
 
-        for (
-                PlayerRankProfile profile :
-                profiles.values()
-        ) {
+        return top.isEmpty() ? null : top.get(0);
+    }
+
+    /**
+     * All players tied for the #1 spot in a skill, per the /skills top
+     * spec: find the highest tier anyone holds this skill at, then
+     * among those, keep only the highest kill-count. If several
+     * players share BOTH the top tier and the top kill count, every
+     * one of them is returned (displayed together) - otherwise only
+     * the single highest-kill player among the top tier is returned.
+     * Empty list if nobody holds this skill at any ranked tier.
+     */
+    public List<PlayerRankProfile> getTopPlayersForSkill(
+            Skill skill) {
+
+        RankTier bestTier = null;
+
+        for (PlayerRankProfile profile : profiles.values()) {
             if (
-                    profile.getSkill() != skill ||
-                            profile.getTier() ==
-                                    RankTier.CIVILLIAN
+                    profile.getSkill() != skill &&
+                            profile.getSecondarySkill() != skill
             ) {
                 continue;
             }
+            if (profile.getTier() == RankTier.CIVILLIAN) continue;
 
-            if (
-                    best == null ||
-                            profile.getTier()
-                                    .ordinal() >
-                                    best.getTier()
-                                            .ordinal() ||
-                            (
-                                    profile.getTier()
-                                            == best.getTier() &&
-                                    profile.getKills() >
-                                            best.getKills()
-                            )
-            ) {
-                best = profile;
+            if (bestTier == null || profile.getTier().ordinal() > bestTier.ordinal()) {
+                bestTier = profile.getTier();
             }
         }
 
-        return best;
+        if (bestTier == null) {
+            return new ArrayList<>();
+        }
+
+        int bestKills = -1;
+        List<PlayerRankProfile> atBestTier = new ArrayList<>();
+
+        for (PlayerRankProfile profile : profiles.values()) {
+            if (
+                    profile.getSkill() != skill &&
+                            profile.getSecondarySkill() != skill
+            ) {
+                continue;
+            }
+            if (profile.getTier() != bestTier) continue;
+
+            atBestTier.add(profile);
+            if (profile.getKills() > bestKills) {
+                bestKills = profile.getKills();
+            }
+        }
+
+        List<PlayerRankProfile> result = new ArrayList<>();
+        for (PlayerRankProfile profile : atBestTier) {
+            if (profile.getKills() == bestKills) {
+                result.add(profile);
+            }
+        }
+
+        return result;
     }
 
     public boolean isNationalEligible(
@@ -746,6 +899,51 @@ public class RankLadderManager {
             );
             refreshOnlineDisplay(
                     promoted.getUuid()
+            );
+        }
+    }
+
+    /**
+     * Every National-vs-National duel (cross-skill) gets a server-wide
+     * announcement - unlike ordinary rank changes, National carries
+     * enough weight that everyone should be told, per design. Shows
+     * the winner's full (possibly now-combined) title.
+     */
+    private void announceNationalCrossSkillWin(
+            UUID winnerUUID,
+            PlayerRankProfile winner,
+            UUID loserUUID) {
+
+        Player winnerPlayer = Bukkit.getPlayer(winnerUUID);
+        Player loserPlayer = Bukkit.getPlayer(loserUUID);
+
+        String winnerName =
+                winnerPlayer != null
+                        ? winnerPlayer.getName()
+                        : Bukkit.getOfflinePlayer(winnerUUID).getName();
+
+        String loserName =
+                loserPlayer != null
+                        ? loserPlayer.getName()
+                        : Bukkit.getOfflinePlayer(loserUUID).getName();
+
+        String title = winner.getMasterTitle();
+
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            online.sendMessage(
+                    ChatColor.GOLD + "" + ChatColor.BOLD + "⚔ NATIONAL DUEL " +
+                            ChatColor.YELLOW + winnerName +
+                            ChatColor.GRAY + " defeated " +
+                            ChatColor.RED + loserName +
+                            ChatColor.GRAY + " — now " +
+                            ChatColor.GOLD + "National " + title
+            );
+
+            online.sendTitle(
+                    ChatColor.GOLD + "" + ChatColor.BOLD + "♛ NATIONAL DUEL",
+                    ChatColor.WHITE + winnerName + ChatColor.GRAY + " is now " +
+                            ChatColor.GOLD + "National " + title,
+                    10, 70, 20
             );
         }
     }
@@ -1149,6 +1347,21 @@ public class RankLadderManager {
 
             winner.setSkill(winnerSkill);
             winner.setTier(RankTier.NATIONAL);
+
+            // Combined double-title: a National who beats another
+            // National in a cross-skill challenge adds the defeated
+            // National's skill as their secondary skill, in the order
+            // won (primary first, this new one second) - capped at 2
+            // skills total. If the winner already holds this exact
+            // skill (a rematch) or is already at the 2-skill cap with a
+            // DIFFERENT skill, nothing changes here.
+            if (
+                    !winner.isAtSkillCap() &&
+                            winner.getSecondarySkill() != loserSkill
+            ) {
+                winner.setSecondarySkill(loserSkill);
+            }
+
             persistProfile(winner);
 
             loser.setSkill(loserSkill);
@@ -1160,6 +1373,7 @@ public class RankLadderManager {
                     winnerSkill
             );
             markNationalDuel(winnerUUID);
+            announceNationalCrossSkillWin(winnerUUID, winner, loserUUID);
 
             return new DuelResult(
                     DuelResult.Type.NATIONAL_DEFENSE,
@@ -1248,6 +1462,7 @@ public class RankLadderManager {
                     winnerSkill
             );
             markNationalDuel(winnerUUID);
+            announceNationalCrossSkillWin(winnerUUID, winner, loserUUID);
 
             return new DuelResult(
                     DuelResult.Type.NATIONAL_DEFENSE,
@@ -1721,6 +1936,28 @@ public class RankLadderManager {
             UUID uuid,
             Skill skill) {
 
+        ensureNationalWeaponForSkill(uuid, skill);
+
+        // A National holding a combined double-title (won via a
+        // cross-skill National-vs-National challenge) must carry BOTH
+        // skills' National weapons at once - the weapon is tied to the
+        // title, and their title now spans two skills.
+        PlayerRankProfile profile = getProfile(uuid);
+        if (
+                profile.getTier() == RankTier.NATIONAL &&
+                        profile.hasSecondarySkill()
+        ) {
+            ensureNationalWeaponForSkill(
+                    uuid,
+                    profile.getSecondarySkill()
+            );
+        }
+    }
+
+    private void ensureNationalWeaponForSkill(
+            UUID uuid,
+            Skill skill) {
+
         Player player =
                 Bukkit.getPlayer(uuid);
 
@@ -1808,6 +2045,67 @@ public class RankLadderManager {
                         leftover
                 );
             }
+        }
+    }
+
+    /**
+     * Join-time correctness sweep: makes sure the player's National
+     * weapon(s), if any, exactly match their current rank title.
+     *
+     * - Not National anymore (rank changed while offline, admin
+     *   /rank remove, etc.) -> every National weapon they're carrying
+     *   is stripped, since none of them are earned anymore.
+     * - National -> any National weapon tagged for a skill that is
+     *   neither their primary nor secondary skill is stripped (covers
+     *   a stale weapon left over from a skill they no longer hold),
+     *   then any missing weapon for their current skill(s) is granted.
+     *
+     * Deliberately NOT run periodically for everyone online - only on
+     * join, per design: a mismatch can only ever be created by an
+     * offline rank change (admin command, or a duel result applied
+     * while the player wasn't online to receive/lose the item live),
+     * so checking at the moment they reconnect is sufficient and far
+     * cheaper than scanning every online player every few seconds.
+     */
+    public void enforceWeaponCorrectnessOnJoin(UUID uuid) {
+        Player player = Bukkit.getPlayer(uuid);
+        if (player == null) return;
+
+        PlayerRankProfile profile = getProfile(uuid);
+
+        if (profile.getTier() != RankTier.NATIONAL) {
+            removeAllNationalWeapons(player);
+            return;
+        }
+
+        Skill primary = profile.getSkill();
+        Skill secondary = profile.getSecondarySkill();
+
+        ItemStack[] contents = player.getInventory().getContents();
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack item = contents[i];
+            if (!WeaponUtil.isNationalWeapon(item)) continue;
+
+            Skill tagged = WeaponUtil.getTaggedSkill(item);
+            if (tagged != primary && tagged != secondary) {
+                contents[i] = null;
+            }
+        }
+        player.getInventory().setContents(contents);
+
+        ItemStack offhand = player.getInventory().getItemInOffHand();
+        if (WeaponUtil.isNationalWeapon(offhand)) {
+            Skill tagged = WeaponUtil.getTaggedSkill(offhand);
+            if (tagged != primary && tagged != secondary) {
+                player.getInventory().setItemInOffHand(null);
+            }
+        }
+
+        if (primary != null) {
+            ensureNationalWeaponForSkill(uuid, primary);
+        }
+        if (secondary != null) {
+            ensureNationalWeaponForSkill(uuid, secondary);
         }
     }
 
@@ -2022,7 +2320,7 @@ public class RankLadderManager {
                         " " +
                         tier.getDisplayName() +
                         " " +
-                        profile.getSkill().getMasterTitle();
+                        profile.getMasterTitle();
 
         return gradientTierText(tier, rankText) +
                 ChatColor.DARK_GRAY +
@@ -2054,7 +2352,7 @@ public class RankLadderManager {
                         " " +
                         tier.getDisplayName() +
                         " " +
-                        profile.getSkill().getMasterTitle();
+                        profile.getMasterTitle();
 
         return gradientTierText(tier, rankText) +
                 " " +

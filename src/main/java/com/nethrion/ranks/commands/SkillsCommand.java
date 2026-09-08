@@ -4,7 +4,7 @@ import com.nethrion.ranks.rank.PlayerRankProfile;
 import com.nethrion.ranks.rank.RankLadderManager;
 import com.nethrion.ranks.rank.Skill;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
+import net.md_5.bungee.api.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;

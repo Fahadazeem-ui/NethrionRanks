@@ -72,6 +72,7 @@ public class DuelListener implements Listener {
 
     private static final class FightDamageTracker {
         double totalDamage;
+        int hits;
         long lastHitMillis;
     }
 
@@ -186,9 +187,11 @@ public class DuelListener implements Listener {
 
         if (now - tracker.lastHitMillis > FIGHT_WINDOW_RESET_MILLIS) {
             tracker.totalDamage = 0.0;
+            tracker.hits = 0;
         }
 
         tracker.totalDamage += damage;
+        tracker.hits++;
         tracker.lastHitMillis = now;
     }
 
@@ -217,6 +220,12 @@ public class DuelListener implements Listener {
         }
 
         return tracker.totalDamage >= MINIMUM_KILL_DAMAGE;
+    }
+
+    private boolean victimActivelyFought(UUID victimUUID, UUID killerUUID) {
+        Map<UUID,FightDamageTracker> by=nonDuelFightDamage.get(killerUUID);
+        if(by==null)return false; FightDamageTracker tr=by.get(victimUUID);
+        return tr!=null && System.currentTimeMillis()-tr.lastHitMillis<=FIGHT_WINDOW_RESET_MILLIS && tr.hits>=10;
     }
 
     private void clearNonDuelFightDamage(UUID victimUUID) {
@@ -411,7 +420,7 @@ public class DuelListener implements Listener {
                 return;
             }
 
-            applyInnocentKillPenalty(killer, loser);
+            if (victimActivelyFought(loser.getUniqueId(), killer.getUniqueId())) { resolveActiveWorldFight(killer, loser); } else { applyInnocentKillPenalty(killer, loser); }
             clearHuntDamage(loser.getUniqueId());
             clearNonDuelFightDamage(loser.getUniqueId());
             return;
@@ -447,20 +456,10 @@ public class DuelListener implements Listener {
             return;
         }
 
-        long minimum =
-                Math.min(
-                        WeaponUtil.getMinDurationMillis(winnerDominant),
-                        WeaponUtil.getMinDurationMillis(loserDominant)
-                );
-
-        if (session.getElapsedMillis() < minimum) {
-            voidMatch(
-                    killer,
-                    loser,
-                    "Duel minimum required time (" +
-                            (minimum / 1000L) +
-                            "s) se pehle khatam ho gayi."
-            );
+        // No per-skill minimum timer. A win needs a continuous combat chain:
+        // at least 10 hearts (20 damage) with no gap over 20 seconds.
+        if (session.getTotalValidDamage(killer.getUniqueId()) < 20.0) {
+            voidMatch(killer, loser, "Winner ne required 10 hearts valid damage complete nahi kiya.");
             return;
         }
 
@@ -1181,5 +1180,14 @@ public class DuelListener implements Listener {
         for (UUID bumped : result.getBumpedPlayers()) {
             ladder.refreshOnlineDisplay(bumped);
         }
+    }    private void resolveActiveWorldFight(Player winner, Player loser) {
+        Skill ws=ladder.getSkill(winner.getUniqueId()); Skill ls=ladder.getSkill(loser.getUniqueId());
+        if(ws!=null && ls!=null && ws==ls) {
+            ladder.resolveDuel(winner.getUniqueId(),ws,loser.getUniqueId(),ls);
+            winner.sendMessage(ChatColor.GREEN+"Active fight treated as ranked duel.");
+            loser.sendMessage(ChatColor.GRAY+"Active fight treated as ranked duel.");
+        }
     }
+
+
 }

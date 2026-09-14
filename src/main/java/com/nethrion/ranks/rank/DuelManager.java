@@ -77,6 +77,13 @@ public class DuelManager {
     public DuelSession startSession(UUID a, UUID b) {
         DuelSession session = new DuelSession(a, b);
         activeSessions.add(session);
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (activeSessions.remove(session)) {
+                Player pa=Bukkit.getPlayer(session.getPlayerA()), pb=Bukkit.getPlayer(session.getPlayerB());
+                if(pa!=null)pa.sendMessage("§cRank duel expired after 10 minutes — no result.");
+                if(pb!=null)pb.sendMessage("§cRank duel expired after 10 minutes — no result.");
+            }
+        }, 20L*60L*10L);
         return session;
     }
 

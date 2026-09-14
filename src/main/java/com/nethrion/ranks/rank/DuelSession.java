@@ -11,6 +11,8 @@ public class DuelSession {
     private final UUID playerB;
     private final long startTime;
     private final Map<UUID, Map<Skill, Double>> damageBySkill = new HashMap<>();
+    private final Map<UUID, Long> lastCombatHit = new HashMap<>();
+    private static final long MAX_HIT_GAP_MILLIS = 20_000L;
 
     public DuelSession(UUID playerA, UUID playerB) {
         this.playerA = playerA;
@@ -38,8 +40,14 @@ public class DuelSession {
     public void recordDamage(UUID attacker, Skill skill, double damage) {
         if (skill == null || damage <= 0.0) return;
         Map<Skill, Double> map = damageBySkill.get(attacker);
-        if (map != null) map.merge(skill, damage, Double::sum);
+        if (map != null) {
+            long now=System.currentTimeMillis(); Long last=lastCombatHit.get(attacker);
+            if(last!=null && now-last>MAX_HIT_GAP_MILLIS) map.clear();
+            map.merge(skill, damage, Double::sum); lastCombatHit.put(attacker,now);
+        }
     }
+
+    public double getTotalValidDamage(UUID uuid) { Map<Skill,Double> m=damageBySkill.get(uuid); if(m==null)return 0.0; long last=lastCombatHit.getOrDefault(uuid,0L); if(System.currentTimeMillis()-last>MAX_HIT_GAP_MILLIS)return 0.0; return m.values().stream().mapToDouble(Double::doubleValue).sum(); }
 
     public Map<Skill, Double> getDamage(UUID uuid) {
         return damageBySkill.getOrDefault(uuid, new EnumMap<>(Skill.class));

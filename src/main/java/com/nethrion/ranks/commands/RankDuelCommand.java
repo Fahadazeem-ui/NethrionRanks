@@ -282,12 +282,10 @@ public class RankDuelCommand
                         !aNational &&
                         !bNational
         ) {
-            a.sendMessage(
-                    ChatColor.RED +
-                            "S vs S duel National promotion nahi deti. " +
-                            "National ko directly challenge karo."
-            );
-            return false;
+            if (ladder.getNationalOccupant(aSkill) != null) {
+                a.sendMessage(ChatColor.RED + "National ko directly challenge karo.");
+                return false;
+            }
         }
 
         return true;

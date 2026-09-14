@@ -1305,6 +1305,18 @@ public class RankLadderManager {
         RankTier loserOld =
                 loser.getTier();
 
+        // Empty National seat: only two S players of the same skill can claim it by duel.
+        if (winnerOld == RankTier.S && loserOld == RankTier.S && winnerSkill != null &&
+                winnerSkill == loserSkill && getNationalOccupant(winnerSkill) == null) {
+            winner.setSkill(winnerSkill); winner.setTier(RankTier.NATIONAL);
+            winner.setLastNationalDuelTimestamp(System.currentTimeMillis()); persistProfile(winner);
+            loser.setSkill(loserSkill); loser.setTier(RankTier.S); persistProfile(loser);
+            ensureNationalWeapon(winnerUUID, winnerSkill); markNationalDuel(winnerUUID);
+            refreshOnlineDisplay(winnerUUID); refreshOnlineDisplay(loserUUID);
+            return new DuelResult(DuelResult.Type.NATIONAL_DEFENSE,winnerUUID,loserUUID,
+                    RankTier.S,RankTier.NATIONAL,RankTier.S,RankTier.S,new ArrayList<>());
+        }
+
         List<UUID> bumped =
                 new ArrayList<>();
 

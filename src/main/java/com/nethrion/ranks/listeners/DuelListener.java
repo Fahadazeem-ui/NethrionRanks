@@ -8,6 +8,7 @@ import com.nethrion.ranks.rank.RankLadderManager;
 import com.nethrion.ranks.rank.RankTier;
 import com.nethrion.ranks.rank.Skill;
 import com.nethrion.ranks.rank.WeaponUtil;
+import com.nethrion.ranks.integration.TeamWarBridge;
 import net.md_5.bungee.api.ChatColor;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Arrow;
@@ -55,6 +56,7 @@ public class DuelListener implements Listener {
 
     private final DuelManager duelManager;
     private final RankLadderManager ladder;
+    private final TeamWarBridge teamWarBridge;
 
     /**
      * Tracks cumulative damage dealt by each attacker to each victim
@@ -89,9 +91,13 @@ public class DuelListener implements Listener {
     private final Map<UUID, Map<UUID, Map<Skill, Double>>> outlawHuntDamage =
             new java.util.HashMap<>();
 
-    public DuelListener(DuelManager duelManager, RankLadderManager ladder) {
+    public DuelListener(
+            DuelManager duelManager,
+            RankLadderManager ladder,
+            TeamWarBridge teamWarBridge) {
         this.duelManager = duelManager;
         this.ladder = ladder;
+        this.teamWarBridge = teamWarBridge;
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -101,7 +107,12 @@ public class DuelListener implements Listener {
         Player attacker = resolveAttacker(event);
         if (attacker == null) return;
 
+        boolean opposingActiveWar =
+                !attacker.getUniqueId().equals(victim.getUniqueId()) &&
+                        teamWarBridge.isOpposingActiveWar(attacker, victim);
+
         if (
+                !opposingActiveWar &&
                 !attacker.getUniqueId().equals(
                         victim.getUniqueId()
                 )
@@ -114,6 +125,7 @@ public class DuelListener implements Listener {
         }
 
         if (
+                !opposingActiveWar &&
                 !attacker.getUniqueId().equals(
                         victim.getUniqueId()
                 ) &&
@@ -220,12 +232,6 @@ public class DuelListener implements Listener {
         }
 
         return tracker.totalDamage >= MINIMUM_KILL_DAMAGE;
-    }
-
-    private boolean victimActivelyFought(UUID victimUUID, UUID killerUUID) {
-        Map<UUID,FightDamageTracker> by=nonDuelFightDamage.get(killerUUID);
-        if(by==null)return false; FightDamageTracker tr=by.get(victimUUID);
-        return tr!=null && System.currentTimeMillis()-tr.lastHitMillis<=FIGHT_WINDOW_RESET_MILLIS && tr.hits>=10;
     }
 
     private void clearNonDuelFightDamage(UUID victimUUID) {
@@ -375,13 +381,20 @@ public class DuelListener implements Listener {
                 // - gated on the minimum half-health damage threshold.
                 if (killer != null) {
                     if (metMinimumKillDamage(loser.getUniqueId(), killer.getUniqueId())) {
-                        PlayerRankProfile victimProfile =
-                                ladder.getProfile(loser.getUniqueId());
-
-                        if (victimProfile.isOutlaw()) {
-                            handleOutlawBountyClaim(killer, loser);
+                        if (teamWarBridge.isOpposingActiveWar(killer, loser)) {
+                            killer.sendMessage(
+                                    ChatColor.GRAY +
+                                            "Team War kill: bounty/outlaw effects are disabled between these war teams."
+                            );
                         } else {
-                            applyInnocentKillPenalty(killer, loser);
+                            PlayerRankProfile victimProfile =
+                                    ladder.getProfile(loser.getUniqueId());
+
+                            if (victimProfile.isOutlaw()) {
+                                handleOutlawBountyClaim(killer, loser);
+                            } else {
+                                applyInnocentKillPenalty(killer, loser);
+                            }
                         }
                     } else {
                         notifyKillBelowThreshold(killer, loser);
@@ -397,6 +410,15 @@ public class DuelListener implements Listener {
         } else {
             // Loser wasn't in any duel at all.
             if (killer == null) return;
+
+            // Team War is a separate combat context. Its active state and
+            // expiration belong to NethrionTeams, so war kills bypass every
+            // normal bounty/outlaw threshold and consequence.
+            if (teamWarBridge.isOpposingActiveWar(killer, loser)) {
+                clearHuntDamage(loser.getUniqueId());
+                clearNonDuelFightDamage(loser.getUniqueId());
+                return;
+            }
 
             // "Kill declare" only happens once the killer dealt at least
             // half-health damage in this specific fight - see the
@@ -420,7 +442,9 @@ public class DuelListener implements Listener {
                 return;
             }
 
-            if (victimActivelyFought(loser.getUniqueId(), killer.getUniqueId())) { resolveActiveWorldFight(killer, loser); } else { applyInnocentKillPenalty(killer, loser); }
+            // Normal PvP kills only trigger the existing bounty/outlaw
+            // consequence. They can never transfer or swap rank.
+            applyInnocentKillPenalty(killer, loser);
             clearHuntDamage(loser.getUniqueId());
             clearNonDuelFightDamage(loser.getUniqueId());
             return;
@@ -590,23 +614,14 @@ public class DuelListener implements Listener {
             return;
         }
 
-        long minimum =
-                Math.min(
-                        WeaponUtil.getMinDurationMillis(
-                                winnerSkill
-                        ),
-                        WeaponUtil.getMinDurationMillis(
-                                loserSkill
-                        )
-                );
-
-        if (
-                session.getElapsedMillis() <
-                        minimum
-        ) {
+        // Disconnect wins only if the remaining opponent had already
+        // completed the same formal-duel damage requirement used by a
+        // normal duel death: at least 10 hearts (20 damage) with no
+        // combat gap over 20 seconds.
+        if (session.getTotalValidDamage(winner.getUniqueId()) < 20.0) {
             winner.sendMessage(
                     ChatColor.GRAY +
-                            "Duel cancelled: minimum time was not reached."
+                            "Duel cancelled: required 10 hearts valid damage was not completed."
             );
             return;
         }
@@ -735,17 +750,10 @@ public class DuelListener implements Listener {
                 );
 
         boolean bountyAlreadyActive = profile.isOutlaw();
-        RankTier oldTier = profile.getTier();
-        Skill oldSkill = profile.getSkill();
 
-        // Swap only actually happens if the killer outranked the victim -
-        // see the Javadoc on resolveInnocentKillRankSwap for why a
-        // lower/equal-rank killer must never gain rank this way.
-        boolean swapped = ladder.resolveInnocentKillRankSwap(
-                killer.getUniqueId(),
-                victim.getUniqueId()
-        );
-
+        // Normal PvP kills NEVER transfer/swap rank. Bounty/outlaw is
+        // intentionally independent; rank changes are reserved for
+        // formal Rank Duels and dedicated National mechanics.
         ladder.startOutlawPenalty(
                 killer.getUniqueId(),
                 OUTLAW_DURATION_MILLIS
@@ -760,35 +768,6 @@ public class DuelListener implements Listener {
                 killer,
                 profile
         );
-
-        RankTier newTier = profile.getTier();
-        Skill newSkill = profile.getSkill();
-
-        if (swapped) {
-            killer.sendMessage(
-                    ChatColor.RED +
-                            "Innocent kill: " +
-                            ChatColor.YELLOW +
-                            "rank changed " +
-                            ChatColor.WHITE +
-                            oldTier.getDisplayName() +
-                            " " +
-                            (oldSkill == null ? "" : oldSkill.getMasterTitle()) +
-                            ChatColor.GRAY +
-                            " → " +
-                            ChatColor.YELLOW +
-                            newTier.getDisplayName() +
-                            " " +
-                            (newSkill == null ? "" : newSkill.getMasterTitle())
-            );
-        } else {
-            killer.sendMessage(
-                    ChatColor.RED +
-                            "Innocent kill: " +
-                            ChatColor.GRAY +
-                            "no rank swap — the victim was not ranked below you."
-            );
-        }
 
         killer.sendMessage(
                 ChatColor.RED +
@@ -1180,14 +1159,6 @@ public class DuelListener implements Listener {
         for (UUID bumped : result.getBumpedPlayers()) {
             ladder.refreshOnlineDisplay(bumped);
         }
-    }    private void resolveActiveWorldFight(Player winner, Player loser) {
-        Skill ws=ladder.getSkill(winner.getUniqueId()); Skill ls=ladder.getSkill(loser.getUniqueId());
-        if(ws!=null && ls!=null && ws==ls) {
-            ladder.resolveDuel(winner.getUniqueId(),ws,loser.getUniqueId(),ls);
-            winner.sendMessage(ChatColor.GREEN+"Active fight treated as ranked duel.");
-            loser.sendMessage(ChatColor.GRAY+"Active fight treated as ranked duel.");
-        }
     }
-
 
 }

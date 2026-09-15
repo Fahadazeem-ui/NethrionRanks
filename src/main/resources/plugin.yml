@@ -4,7 +4,7 @@ main: com.nethrion.ranks.Main
 api-version: '1.21.11'
 author: Nethrion
 description: Ranked progression, formal duels, permanent combat skills, custom Spear and base audit system.
-softdepend: [PlaceholderAPI]
+softdepend: [PlaceholderAPI, NethrionTeams]
 
 permissions:
   nethrionranks.admin:
@@ -35,3 +35,7 @@ commands:
   killtop:
     description: Top three formal ranked duel killers
     usage: /killtop
+
+  pvp:
+    description: Personal PvP toggle
+    usage: /pvp | /pvp on | /pvp off

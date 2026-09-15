@@ -1,6 +1,7 @@
 package com.nethrion.ranks.commands;
 
 import com.nethrion.ranks.rank.DuelManager;
+import com.nethrion.ranks.pvp.PvPManager;
 import com.nethrion.ranks.rank.RankLadderManager;
 import com.nethrion.ranks.rank.RankTier;
 import com.nethrion.ranks.rank.Skill;
@@ -21,12 +22,15 @@ public class RankDuelCommand
 
     private final DuelManager duelManager;
     private final RankLadderManager ladder;
+    private final PvPManager pvpManager;
 
     public RankDuelCommand(
             DuelManager duelManager,
-            RankLadderManager ladder) {
+            RankLadderManager ladder,
+            PvPManager pvpManager) {
         this.duelManager = duelManager;
         this.ladder = ladder;
+        this.pvpManager = pvpManager;
     }
 
     @Override
@@ -185,6 +189,21 @@ public class RankDuelCommand
     private boolean checkEligibility(
             Player a,
             Player b) {
+
+        if (!pvpManager.isEnabled(a.getUniqueId()) ||
+                !pvpManager.isEnabled(b.getUniqueId())) {
+            a.sendMessage(
+                    ChatColor.RED +
+                            "Rank Duel ke liye dono players ka PvP ON hona zaroori hai."
+            );
+            if (!pvpManager.isEnabled(b.getUniqueId())) {
+                b.sendMessage(
+                        ChatColor.RED +
+                                "Rank Duel ke liye tumhara PvP ON hona zaroori hai."
+                );
+            }
+            return false;
+        }
 
         Skill aSkill =
                 ladder.getSkill(

@@ -11,6 +11,10 @@ import com.nethrion.ranks.listeners.NationalWeaponListener;
 import com.nethrion.ranks.listeners.DuelListener;
 import com.nethrion.ranks.listeners.RankDisplayListener;
 import com.nethrion.ranks.listeners.SpearListener;
+import com.nethrion.ranks.integration.TeamWarBridge;
+import com.nethrion.ranks.pvp.PvPManager;
+import com.nethrion.ranks.pvp.PvPToggleListener;
+import com.nethrion.ranks.commands.PvPCommand;
 import com.nethrion.ranks.managers.BaseManager;
 import com.nethrion.ranks.rank.DuelManager;
 import com.nethrion.ranks.rank.RankLadderManager;
@@ -21,6 +25,7 @@ public final class Main extends JavaPlugin {
     private RankLadderManager rankLadderManager;
     private DuelManager duelManager;
     private BaseManager baseManager;
+    private PvPManager pvpManager;
 
     @Override
     public void onEnable() {
@@ -29,6 +34,8 @@ public final class Main extends JavaPlugin {
         rankLadderManager = new RankLadderManager(this);
         duelManager = new DuelManager(this, rankLadderManager);
         baseManager = new BaseManager(this);
+        pvpManager = new PvPManager(this);
+        TeamWarBridge teamWarBridge = new TeamWarBridge();
 
         RankCommand rankCommand =
                 new RankCommand(rankLadderManager);
@@ -42,7 +49,8 @@ public final class Main extends JavaPlugin {
         RankDuelCommand rankDuelCommand =
                 new RankDuelCommand(
                         duelManager,
-                        rankLadderManager
+                        rankLadderManager,
+                        pvpManager
                 );
 
         getCommand("rank").setExecutor(rankCommand);
@@ -63,6 +71,11 @@ public final class Main extends JavaPlugin {
                 new KillTopCommand(rankLadderManager)
         );
 
+        PvPCommand pvpCommand =
+                new PvPCommand(pvpManager, duelManager);
+        getCommand("pvp").setExecutor(pvpCommand);
+        getCommand("pvp").setTabCompleter(pvpCommand);
+
         getServer().getPluginManager().registerEvents(
                 new BaseListener(baseManager),
                 this
@@ -70,12 +83,18 @@ public final class Main extends JavaPlugin {
         getServer().getPluginManager().registerEvents(
                 new DuelListener(
                         duelManager,
-                        rankLadderManager
+                        rankLadderManager,
+                        teamWarBridge
                 ),
                 this
         );
         getServer().getPluginManager().registerEvents(
                 new SpearListener(),
+                this
+        );
+
+        getServer().getPluginManager().registerEvents(
+                new PvPToggleListener(pvpManager),
                 this
         );
 

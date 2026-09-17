@@ -25,7 +25,7 @@ public class KillTopCommand implements CommandExecutor {
         sender.sendMessage(ChatColor.GOLD + "========== TOP KILLERS ==========");
 
         if (top.isEmpty()) {
-            sender.sendMessage(ChatColor.GRAY + "No ranked kills yet.");
+            sender.sendMessage(ChatColor.GRAY + "No kills yet.");
         }
 
         int place = 1;

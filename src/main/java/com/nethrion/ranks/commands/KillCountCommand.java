@@ -23,7 +23,7 @@ public class KillCountCommand implements CommandExecutor {
         }
 
         player.sendMessage(
-                ChatColor.GOLD + "Ranked duel kills: " +
+                ChatColor.GOLD + "Kills: " +
                         ChatColor.GREEN +
                         ladder.getKills(player.getUniqueId())
         );

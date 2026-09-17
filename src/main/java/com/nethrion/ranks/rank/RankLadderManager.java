@@ -510,6 +510,14 @@ public class RankLadderManager {
         persistProfile(profile);
     }
 
+    public void setKills(UUID uuid, int kills) {
+        if (uuid == null) return;
+
+        PlayerRankProfile profile = getProfile(uuid);
+        profile.setKills(kills);
+        persistProfile(profile);
+    }
+
     public int getKills(UUID uuid) {
         return getProfile(uuid).getKills();
     }

@@ -2,6 +2,7 @@ package com.nethrion.ranks;
 
 import com.nethrion.ranks.commands.BaseCommand;
 import com.nethrion.ranks.commands.KillCountCommand;
+import com.nethrion.ranks.commands.KillAdminCommand;
 import com.nethrion.ranks.commands.KillTopCommand;
 import com.nethrion.ranks.commands.RankCommand;
 import com.nethrion.ranks.commands.RankDuelCommand;
@@ -70,6 +71,11 @@ public final class Main extends JavaPlugin {
         getCommand("killtop").setExecutor(
                 new KillTopCommand(rankLadderManager)
         );
+
+        KillAdminCommand killAdminCommand =
+                new KillAdminCommand(rankLadderManager);
+        getCommand("kill").setExecutor(killAdminCommand);
+        getCommand("kill").setTabCompleter(killAdminCommand);
 
         PvPCommand pvpCommand =
                 new PvPCommand(pvpManager, duelManager);

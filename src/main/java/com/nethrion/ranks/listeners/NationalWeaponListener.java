@@ -48,6 +48,12 @@ public class NationalWeaponListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onDrop(PlayerDropItemEvent event) {
+        // Operators may use inventory-management plugins (e.g. InvSee)
+        // to administer National inventories, including locked weapons.
+        if (event.getPlayer().isOp()) {
+            return;
+        }
+
         if (
                 WeaponUtil.isLockedWeapon(
                         event.getItemDrop().getItemStack()
@@ -62,7 +68,14 @@ public class NationalWeaponListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onClick(InventoryClickEvent event) {
-        if (!(event.getWhoClicked() instanceof Player)) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+
+        // OP inventory administration is intentionally allowed so an
+        // existing InvSee-style plugin can add/remove/edit National
+        // weapons without this listener blocking the operation.
+        if (player.isOp()) {
             return;
         }
 
@@ -115,6 +128,10 @@ public class NationalWeaponListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onDrag(InventoryDragEvent event) {
+        if (event.getWhoClicked() instanceof Player player && player.isOp()) {
+            return;
+        }
+
         if (
                 !WeaponUtil.isLockedWeapon(
                         event.getOldCursor()

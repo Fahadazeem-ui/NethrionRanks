@@ -39,3 +39,7 @@ commands:
   pvp:
     description: Personal PvP toggle
     usage: /pvp | /pvp on | /pvp off
+
+  kill:
+    description: Operator-only kill count administration
+    usage: /kill set <username> <count>

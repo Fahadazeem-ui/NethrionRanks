@@ -382,6 +382,9 @@ public class DuelListener implements Listener {
                 if (killer != null) {
                     if (metMinimumKillDamage(loser.getUniqueId(), killer.getUniqueId())) {
                         if (teamWarBridge.isOpposingActiveWar(killer, loser)) {
+                            // Count the actual Team War kill, while keeping
+                            // bounty/outlaw/rank consequences disabled.
+                            ladder.addKill(killer.getUniqueId());
                             killer.sendMessage(
                                     ChatColor.GRAY +
                                             "Team War kill: bounty/outlaw effects are disabled between these war teams."
@@ -415,6 +418,10 @@ public class DuelListener implements Listener {
             // expiration belong to NethrionTeams, so war kills bypass every
             // normal bounty/outlaw threshold and consequence.
             if (teamWarBridge.isOpposingActiveWar(killer, loser)) {
+                // Team War kills are still legitimate kills for the
+                // player's kill counter, but never trigger Rank/Bounty
+                // consequences inside the active war.
+                ladder.addKill(killer.getUniqueId());
                 clearHuntDamage(loser.getUniqueId());
                 clearNonDuelFightDamage(loser.getUniqueId());
                 return;
@@ -445,6 +452,9 @@ public class DuelListener implements Listener {
             // Normal PvP kills only trigger the existing bounty/outlaw
             // consequence. They can never transfer or swap rank.
             applyInnocentKillPenalty(killer, loser);
+            // Normal PvP still counts as a legitimate kill for /killcount
+            // and /killtop; only rank transfer is removed.
+            ladder.addKill(killer.getUniqueId());
             clearHuntDamage(loser.getUniqueId());
             clearNonDuelFightDamage(loser.getUniqueId());
             return;

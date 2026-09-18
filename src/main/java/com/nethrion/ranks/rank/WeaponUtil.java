@@ -449,12 +449,13 @@ public final class WeaponUtil {
             RankTier tier,
             boolean locked) {
 
-        // National (locked) tier gets a real vanilla Spear item
-        // (Material.NETHERITE_SPEAR, added in the Mounts of Mayhem
-        // update). Every tier below National keeps the original
-        // Iron Hoe placeholder — unchanged, exactly as before.
-        Material spearMaterial =
-                locked ? Material.NETHERITE_SPEAR : Material.IRON_HOE;
+        // There is no real vanilla Spear item in Minecraft (no
+        // *_SPEAR material exists), so every tier — including
+        // National — uses the Iron Hoe placeholder. National still
+        // gets its bonus attack damage below and its full Lunge
+        // ability via the tagged PDC level, simulated entirely by
+        // SpearListener.
+        Material spearMaterial = Material.IRON_HOE;
 
         ItemStack item =
                 buildWeaponPiece(
@@ -596,7 +597,7 @@ public final class WeaponUtil {
             meta.setCustomModelData(NATIONAL_MACE_MODEL_DATA);
         }
 
-        if (isRealSpearMaterial(material) && locked) {
+        if (ROLE_SPEAR.equals(role) && locked) {
             addAttackDamageBoost(
                     meta,
                     NATIONAL_SPEAR_DAMAGE_BOOST
@@ -793,7 +794,7 @@ public final class WeaponUtil {
 
         if (skill == Skill.SPEARMACE && ROLE_SPEAR.equals(role)) {
             add(item, Enchantment.SHARPNESS, 6);
-            add(item, Enchantment.LUNGE, 5);
+            setLungeLevel(item, 5);
             add(item, Enchantment.LOOTING, 4);
             add(item, Enchantment.FIRE_ASPECT, 3);
             add(item, Enchantment.KNOCKBACK, 2);
@@ -927,6 +928,28 @@ public final class WeaponUtil {
                 enchantment,
                 Math.max(1, level)
         );
+    }
+
+    /**
+     * "Lunge" is not a real registered Minecraft enchantment, so
+     * its level is stored as a tagged PDC value instead (see
+     * LUNGE_KEY / getLungeLevel above) — SpearListener reads this
+     * tag to apply the actual forward-dash effect on hit.
+     */
+    private static void setLungeLevel(
+            ItemStack item,
+            int level) {
+
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) return;
+
+        meta.getPersistentDataContainer().set(
+                LUNGE_KEY,
+                PersistentDataType.INTEGER,
+                Math.max(1, level)
+        );
+
+        item.setItemMeta(meta);
     }
 
     public static String describe(

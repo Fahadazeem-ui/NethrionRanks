@@ -246,7 +246,7 @@ public class RankGUI {
 
         // Civilian count summary
         long civilianCount = ladder.getAllProfiles().stream()
-                .filter(pr -> pr.getTier() == RankTier.CIVILIAN || pr.getTier() == null)
+                .filter(pr -> pr.getTier() == RankTier.CIVILLIAN || pr.getTier() == null)
                 .count();
         inv.setItem(40, infoPane(
                 Material.LEATHER_CHESTPLATE,
@@ -471,14 +471,7 @@ public class RankGUI {
     }
 
     private static ItemStack applyButton(PlayerRankProfile profile) {
-        Skill skill = profile.getSkill();
-        if (skill == Skill.MINER) {
-            return actionButton(Material.IRON_PICKAXE,
-                    gradient("Miner Progress", "#AAFFAA", "#44AA44", true),
-                    List.of(dim("View your mining statistics"), dim("and progression.")),
-                    "GUI_MINER"
-            );
-        } else if (profile.getTier() != RankTier.NATIONAL) {
+        if (profile.getTier() != RankTier.NATIONAL) {
             return actionButton(Material.PAPER,
                     gradient("Apply / Resign", GREY, "#555555", true),
                     List.of(dim("Apply for Miner rank"), dim("or resign your current rank.")),
@@ -623,7 +616,6 @@ public class RankGUI {
             case MACE      -> Material.MACE;
             case SPEARMACE -> Material.IRON_HOE;
             case BOW       -> Material.BOW;
-            case MINER     -> Material.NETHERITE_PICKAXE;
         };
     }
 
@@ -635,7 +627,6 @@ public class RankGUI {
             case MACE      -> new String[]{"#CC44FF", "#7700CC"};
             case SPEARMACE -> new String[]{"#44FFAA", "#008844"};
             case BOW       -> new String[]{"#44CCFF", "#0066CC"};
-            case MINER     -> new String[]{"#FFD700", "#AA8800"};
         };
     }
 

@@ -9,6 +9,7 @@ import com.nethrion.ranks.rank.RankTier;
 import com.nethrion.ranks.rank.Skill;
 import com.nethrion.ranks.rank.WeaponUtil;
 import com.nethrion.ranks.integration.TeamWarBridge;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.md_5.bungee.api.ChatColor;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Arrow;
@@ -162,10 +163,12 @@ public class DuelListener implements Listener {
                 );
 
                 victim.sendActionBar(
-                        ChatColor.RED +
-                                "Outlaw penalty refreshed: " +
-                                ChatColor.WHITE +
-                                "3:00"
+                        LegacyComponentSerializer.legacySection().deserialize(
+                                ChatColor.RED +
+                                        "Outlaw penalty refreshed: " +
+                                        ChatColor.WHITE +
+                                        "3:00"
+                        )
                 );
             }
         }
@@ -745,8 +748,10 @@ public class DuelListener implements Listener {
             Player victim) {
 
         killer.sendActionBar(
-                ChatColor.GRAY +
-                        "Kill not declared: not enough damage dealt in this fight."
+                LegacyComponentSerializer.legacySection().deserialize(
+                        ChatColor.GRAY +
+                                "Kill not declared: not enough damage dealt in this fight."
+                )
         );
     }
 

@@ -14,6 +14,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import java.util.UUID;
 
@@ -175,10 +176,12 @@ public class BaseListener
                             baseOwner.isOnline()
             ) {
                 baseOwner.sendActionBar(
-                        "§c⚠ " +
-                                player.getName() +
-                                " opened storage in Base " +
-                                base.slot()
+                        LegacyComponentSerializer.legacySection().deserialize(
+                                "§c⚠ " +
+                                        player.getName() +
+                                        " opened storage in Base " +
+                                        base.slot()
+                        )
                 );
             }
         }

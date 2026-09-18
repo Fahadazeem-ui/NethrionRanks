@@ -14,7 +14,6 @@ java {
 
 repositories {
     mavenCentral()
-    maven { url 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/' }
     maven { url 'https://repo.papermc.io/repository/maven-public/' }
     maven { url 'https://repo.extendedclip.com/content/repositories/placeholderapi/' }
     // lets us depend on the pre-built libs/NethrionRanks-original.jar by file name
@@ -22,8 +21,13 @@ repositories {
 }
 
 dependencies {
-    // Server API — present at runtime on the server, not bundled into our jar
-    compileOnly 'org.spigotmc:spigot-api:1.21-R0.1-SNAPSHOT'
+    // Paper API, not Spigot API — the code uses Paper-only Adventure-native
+    // methods (Player.sendActionBar(Component), InventoryView.title(),
+    // ItemMeta.lore() as List<Component>), which plain org.spigotmc:spigot-api
+    // does not have. Paper API also brings in net.kyori.adventure.* properly
+    // as a compile dependency (fixes the "package net.kyori.adventure... does
+    // not exist" errors).
+    compileOnly 'io.papermc.paper:paper-api:1.21-R0.1-SNAPSHOT'
     compileOnly 'me.clip:placeholderapi:2.11.6'
 
     // Original 1.0.0 compiled classes (MinerProgressionManager, RankRequestManager,

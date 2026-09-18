@@ -43,13 +43,13 @@ public final class RankExitRequestManager {
         }
         config = YamlConfiguration.loadConfiguration(file);
         pending.clear();
-        ConfigurationSectionAdapter.forEachTopLevel(config, key -> {
+        for (String key : config.getKeys(false)) {
             try {
                 UUID uuid = UUID.fromString(key);
                 long created = config.getLong(key + ".created", 0L);
                 if (created > 0L) pending.put(uuid, created);
             } catch (IllegalArgumentException ignored) {}
-        });
+        }
     }
 
     private void save() {

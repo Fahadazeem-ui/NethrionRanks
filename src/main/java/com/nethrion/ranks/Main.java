@@ -2,11 +2,11 @@ package com.nethrion.ranks;
 
 import com.nethrion.ranks.gui.RankGUICommand;
 import com.nethrion.ranks.gui.RankGUIListener;
-import com.nethrion.ranks.miner.MinerProgressionManager;
+import com.nethrion.ranks.miner.NationalMinerManager;
 import com.nethrion.ranks.pvp.PvPManager;
 import com.nethrion.ranks.rank.DuelManager;
 import com.nethrion.ranks.rank.RankLadderManager;
-import com.nethrion.ranks.requests.RankRequestManager;
+import com.nethrion.ranks.managers.RankExitRequestManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -16,7 +16,7 @@ import org.bukkit.plugin.java.JavaPlugin;
  * command (/rankgui) and the GUI click listener.
  *
  * All original systems (RankLadderManager, DuelManager, WeaponUtil,
- * MinerProgressionManager, BaseManager, PvPManager, etc.) are
+ * NationalMinerManager, BaseManager, PvPManager, etc.) are
  * unchanged and loaded exactly as before.
  */
 public class Main extends JavaPlugin {
@@ -26,9 +26,9 @@ public class Main extends JavaPlugin {
     // ── Managers (wired in onEnable) ─────────────────────────────
     private RankLadderManager rankLadderManager;
     private DuelManager       duelManager;
-    private MinerProgressionManager minerManager;
+    private NationalMinerManager minerManager;
     private PvPManager        pvpManager;
-    private RankRequestManager requestManager;
+    private RankExitRequestManager requestManager;
 
     @Override
     public void onEnable() {
@@ -40,8 +40,8 @@ public class Main extends JavaPlugin {
         duelManager       = new DuelManager(this, rankLadderManager);
 
         pvpManager        = new PvPManager(this);
-        minerManager      = new MinerProgressionManager(this, rankLadderManager);
-        requestManager    = new RankRequestManager(this, rankLadderManager, minerManager);
+        minerManager      = new NationalMinerManager(this, rankLadderManager);
+        requestManager    = new RankExitRequestManager(this, rankLadderManager, minerManager);
 
         // ── Register original commands ─────────────────────────────
         registerOriginalCommands();
@@ -153,7 +153,7 @@ public class Main extends JavaPlugin {
                 duelManager, rankLadderManager, teamWarBridge), this);
 
         pm.registerEvents(new com.nethrion.ranks.listeners.NationalWeaponListener(
-                rankLadderManager, pvpManager, minerManager), this);
+                rankLadderManager, minerManager), this);
 
         pm.registerEvents(new com.nethrion.ranks.listeners.RankDisplayListener(
                 rankLadderManager), this);
@@ -161,6 +161,11 @@ public class Main extends JavaPlugin {
         pm.registerEvents(new com.nethrion.ranks.listeners.SpearListener(), this);
 
         pm.registerEvents(new com.nethrion.ranks.pvp.PvPToggleListener(pvpManager), this);
+
+        // NationalMinerManager implements Listener (block-break /
+        // join tracking for mining totals) but was never registered
+        // — without this, mining progress would never be recorded.
+        pm.registerEvents(minerManager, this);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -178,7 +183,7 @@ public class Main extends JavaPlugin {
         return duelManager;
     }
 
-    public MinerProgressionManager getMinerManager() {
+    public NationalMinerManager getMinerManager() {
         return minerManager;
     }
 
@@ -186,7 +191,7 @@ public class Main extends JavaPlugin {
         return pvpManager;
     }
 
-    public RankRequestManager getRequestManager() {
+    public RankExitRequestManager getRequestManager() {
         return requestManager;
     }
 }

@@ -1,7 +1,7 @@
 package com.nethrion.ranks.gui;
 
 import com.nethrion.ranks.Main;
-import com.nethrion.ranks.miner.MinerProgressionManager;
+import com.nethrion.ranks.miner.NationalMinerManager;
 import com.nethrion.ranks.pvp.PvPManager;
 import com.nethrion.ranks.rank.PlayerRankProfile;
 import com.nethrion.ranks.rank.RankLadderManager;
@@ -48,7 +48,7 @@ public class RankGUIListener implements Listener {
     private void handleAction(Player player, String action) {
         RankLadderManager ladder = Main.getInstance().getRankLadderManager();
         PvPManager pvpManager = Main.getInstance().getPvPManager();
-        MinerProgressionManager minerManager = Main.getInstance().getMinerManager();
+        NationalMinerManager minerManager = Main.getInstance().getMinerManager();
 
         switch (action) {
 
@@ -128,7 +128,12 @@ public class RankGUIListener implements Listener {
             // ── Miner Progress ─────────────────────────────
             case "GUI_MINER" -> {
                 player.closeInventory();
-                minerManager.sendProgress(player);
+                long blocks = minerManager.getBlocks(player.getUniqueId());
+                boolean isMiner = minerManager.isNationalMiner(player.getUniqueId());
+                player.sendMessage(MM.deserialize(
+                        "<color:#FFD700>Mining progress: </color>" +
+                        "<color:#FFFFFF>" + blocks + " / " + NationalMinerManager.MINIMUM_BLOCKS + " blocks</color>" +
+                        (isMiner ? " <color:#44FF44>(NationalMiner)</color>" : "")));
             }
 
             // ── Admin panel hints ───────────────────────────

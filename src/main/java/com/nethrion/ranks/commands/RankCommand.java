@@ -6,6 +6,7 @@ import com.nethrion.ranks.rank.RankTier;
 import com.nethrion.ranks.rank.Skill;
 import com.nethrion.ranks.rank.WeaponUtil;
 import org.bukkit.Bukkit;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;

@@ -112,7 +112,7 @@ public final class RankExitRequestManager {
     }
 
     public boolean cancel(UUID uuid) {
-        if (!pending.remove(uuid)) return false;
+        if (pending.remove(uuid) == null) return false;
         save();
         return true;
     }

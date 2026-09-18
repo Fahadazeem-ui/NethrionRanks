@@ -432,15 +432,15 @@ public class RankCommand
             return;
         }
 
-        Player target =
-                Bukkit.getPlayerExact(
+        OfflinePlayer target =
+                resolveKnownPlayer(
                         args[1]
                 );
 
         if (target == null) {
             sender.sendMessage(
                     ChatColor.RED +
-                            "Player online nahi hai."
+                            "Player not found in known server players."
             );
             return;
         }
@@ -554,15 +554,15 @@ public class RankCommand
             return;
         }
 
-        Player target =
-                Bukkit.getPlayerExact(
+        OfflinePlayer target =
+                resolveKnownPlayer(
                         args[1]
                 );
 
         if (target == null) {
             sender.sendMessage(
                     ChatColor.RED +
-                            "Player online nahi hai."
+                            "Player not found in known server players."
             );
             return;
         }
@@ -571,14 +571,16 @@ public class RankCommand
                 target.getUniqueId()
         );
 
-        target.sendMessage(
-                ChatColor.YELLOW +
-                        "Your rank was reset by an admin. You are now " +
-                        ChatColor.GRAY +
-                        "Civillian" +
-                        ChatColor.YELLOW +
-                        " with no locked skill."
-        );
+        if (target.isOnline()) {
+            target.getPlayer().sendMessage(
+                    ChatColor.YELLOW +
+                            "Your rank was reset by an admin. You are now " +
+                            ChatColor.GRAY +
+                            "Civillian" +
+                            ChatColor.YELLOW +
+                            " with no locked skill."
+            );
+        }
 
         sender.sendMessage(
                 ChatColor.GREEN +
@@ -613,16 +615,21 @@ public class RankCommand
             return;
         }
 
-        Player target =
-                Bukkit.getPlayerExact(
+        OfflinePlayer target =
+                resolveKnownPlayer(
                         args[1]
                 );
 
         if (target == null) {
             sender.sendMessage(
                     ChatColor.RED +
-                            "Player online nahi hai."
+                            "Player not found in known server players."
             );
+            return;
+        }
+
+        if (!target.isOnline()) {
+            sender.sendMessage(ChatColor.RED + "Weapon administration requires the player to be online.");
             return;
         }
 
@@ -683,12 +690,12 @@ public class RankCommand
                 );
 
         for (ItemStack weapon : weapons) {
-            target.getInventory().addItem(
+            target.getPlayer().getInventory().addItem(
                     weapon
             );
         }
 
-        target.sendMessage(
+        target.getPlayer().sendMessage(
                 ChatColor.GOLD +
                         "Admin test weapon received: " +
                         ChatColor.WHITE +
@@ -737,15 +744,15 @@ public class RankCommand
             return;
         }
 
-        Player target =
-                Bukkit.getPlayerExact(
+        OfflinePlayer target =
+                resolveKnownPlayer(
                         args[1]
                 );
 
         if (target == null) {
             sender.sendMessage(
                     ChatColor.RED +
-                            "Player online nahi hai."
+                            "Player not found in known server players."
             );
             return;
         }
@@ -780,12 +787,14 @@ public class RankCommand
                         : "National " +
                         skill.getMasterTitle();
 
-        target.sendMessage(
-                ChatColor.GOLD +
-                        "Your " +
-                        scope +
-                        " were removed by an admin."
-        );
+        if (target.isOnline()) {
+            target.getPlayer().sendMessage(
+                    ChatColor.GOLD +
+                            "Your " +
+                            scope +
+                            " were removed by an admin."
+            );
+        }
 
         sender.sendMessage(
                 ChatColor.GREEN +
@@ -795,6 +804,15 @@ public class RankCommand
                         target.getName() +
                         "."
         );
+    }
+
+    private OfflinePlayer resolveKnownPlayer(String name) {
+        Player online = Bukkit.getPlayerExact(name);
+        if (online != null) return online;
+
+        OfflinePlayer offline = Bukkit.getOfflinePlayer(name);
+        if (!offline.hasPlayedBefore()) return null;
+        return offline;
     }
 
     @Override
@@ -850,11 +868,12 @@ public class RankCommand
             List<String> names =
                     new ArrayList<>();
 
-            for (Player player :
-                    Bukkit.getOnlinePlayers()) {
-                names.add(
-                        player.getName()
-                );
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                names.add(player.getName());
+            }
+            for (PlayerRankProfile profile : ladder.getAllProfiles()) {
+                String name = Bukkit.getOfflinePlayer(profile.getUuid()).getName();
+                if (name != null && !names.contains(name)) names.add(name);
             }
 
             return filter(

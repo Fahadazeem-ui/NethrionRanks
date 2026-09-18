@@ -16,6 +16,10 @@ import com.nethrion.ranks.integration.TeamWarBridge;
 import com.nethrion.ranks.pvp.PvPManager;
 import com.nethrion.ranks.pvp.PvPToggleListener;
 import com.nethrion.ranks.commands.PvPCommand;
+import com.nethrion.ranks.commands.ApplyCommand;
+import com.nethrion.ranks.commands.RequestsCommand;
+import com.nethrion.ranks.managers.RankExitRequestManager;
+import com.nethrion.ranks.miner.NationalMinerManager;
 import com.nethrion.ranks.managers.BaseManager;
 import com.nethrion.ranks.rank.DuelManager;
 import com.nethrion.ranks.rank.RankLadderManager;
@@ -27,6 +31,8 @@ public final class Main extends JavaPlugin {
     private DuelManager duelManager;
     private BaseManager baseManager;
     private PvPManager pvpManager;
+    private RankExitRequestManager rankExitRequests;
+    private NationalMinerManager nationalMinerManager;
 
     @Override
     public void onEnable() {
@@ -36,6 +42,8 @@ public final class Main extends JavaPlugin {
         duelManager = new DuelManager(this, rankLadderManager);
         baseManager = new BaseManager(this);
         pvpManager = new PvPManager(this);
+        nationalMinerManager = new NationalMinerManager(this, rankLadderManager);
+        rankExitRequests = new RankExitRequestManager(this, rankLadderManager, nationalMinerManager);
         TeamWarBridge teamWarBridge = new TeamWarBridge();
 
         RankCommand rankCommand =
@@ -82,6 +90,16 @@ public final class Main extends JavaPlugin {
         getCommand("pvp").setExecutor(pvpCommand);
         getCommand("pvp").setTabCompleter(pvpCommand);
 
+        ApplyCommand applyCommand =
+                new ApplyCommand(nationalMinerManager, rankExitRequests);
+        getCommand("apply").setExecutor(applyCommand);
+        getCommand("apply").setTabCompleter(applyCommand);
+
+        RequestsCommand requestsCommand =
+                new RequestsCommand(rankExitRequests, rankLadderManager);
+        getCommand("requests").setExecutor(requestsCommand);
+        getCommand("requests").setTabCompleter(requestsCommand);
+
         getServer().getPluginManager().registerEvents(
                 new BaseListener(baseManager),
                 this
@@ -106,7 +124,8 @@ public final class Main extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(
                 new NationalWeaponListener(
-                        rankLadderManager
+                        rankLadderManager,
+                        nationalMinerManager
                 ),
                 this
         );
@@ -114,6 +133,11 @@ public final class Main extends JavaPlugin {
                 new RankDisplayListener(
                         rankLadderManager
                 ),
+                this
+        );
+
+        getServer().getPluginManager().registerEvents(
+                nationalMinerManager,
                 this
         );
 
@@ -151,6 +175,9 @@ public final class Main extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (nationalMinerManager != null) {
+            nationalMinerManager.save();
+        }
         getLogger().info("NethrionRanks disabled.");
     }
 }

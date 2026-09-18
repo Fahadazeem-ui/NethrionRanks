@@ -43,3 +43,11 @@ commands:
   kill:
     description: Operator-only kill count administration
     usage: /kill set <username> <count>
+
+  apply:
+    description: Apply for NationalMiner or request a rank exit
+    usage: /apply <miner|civilian>
+
+  requests:
+    description: Operator-only pending rank exit requests
+    usage: /requests | /requests approve <player> | /requests cancel <player>

@@ -4,6 +4,7 @@ import com.nethrion.ranks.rank.RankLadderManager;
 import com.nethrion.ranks.rank.RankTier;
 import com.nethrion.ranks.rank.Skill;
 import com.nethrion.ranks.rank.WeaponUtil;
+import com.nethrion.ranks.miner.NationalMinerManager;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -38,12 +39,15 @@ import java.util.UUID;
 public class NationalWeaponListener implements Listener {
 
     private final RankLadderManager ladder;
+    private final NationalMinerManager miner;
     private final Map<UUID, List<ItemStack>> restoreAfterDeath =
             new HashMap<>();
 
     public NationalWeaponListener(
-            RankLadderManager ladder) {
+            RankLadderManager ladder,
+            NationalMinerManager miner) {
         this.ladder = ladder;
+        this.miner = miner;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -244,6 +248,13 @@ public class NationalWeaponListener implements Listener {
                              * the new National already received a
                              * brand new copy.
                              */
+                            if (NationalMinerManager.isMinerWeapon(item)) {
+                                if (miner.isNationalMiner(uuid)) {
+                                    player.getInventory().addItem(item);
+                                }
+                                continue;
+                            }
+
                             Skill itemSkill =
                                     WeaponUtil.getTaggedSkill(item);
 

@@ -1,9 +1,10 @@
 plugins {
     id 'java'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 
 group = 'com.nethrion'
-version = '1.0.0'
+version = '1.1.0'
 
 java {
     toolchain {
@@ -13,29 +14,46 @@ java {
 
 repositories {
     mavenCentral()
-    maven { url = 'https://repo.papermc.io/repository/maven-public/' }
-    maven { url = 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/' }
-    maven { url = 'https://repo.extendedclip.com/content/repositories/placeholderapi/' }
+    maven { url 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/' }
+    maven { url 'https://repo.papermc.io/repository/maven-public/' }
+    maven { url 'https://repo.extendedclip.com/content/repositories/placeholderapi/' }
+    // lets us depend on the pre-built libs/NethrionRanks-original.jar by file name
+    flatDir { dirs 'libs' }
 }
 
 dependencies {
-    compileOnly 'io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT'
-    compileOnly 'me.clip:placeholderapi:2.11.5'
+    // Server API — present at runtime on the server, not bundled into our jar
+    compileOnly 'org.spigotmc:spigot-api:1.21-R0.1-SNAPSHOT'
+    compileOnly 'me.clip:placeholderapi:2.11.6'
+
+    // Original 1.0.0 compiled classes (MinerProgressionManager, RankRequestManager,
+    // RankTier, Skill, RankLadderManager, etc.) — the new GUI code compiles against
+    // these, and shadowJar below merges them into the final jar, exactly like the
+    // Maven build's system-scope dependency + shade <includes>.
+    implementation files('libs/NethrionRanks-original.jar')
 }
 
-def targetJavaVersion = 21
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
-    if (targetJavaVersion >= 10) {
-        options.release.set(targetJavaVersion)
-    }
+tasks.named('processResources') {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
 }
 
-processResources {
-    def props = [version: version]
-    inputs.properties props
-    filteringCharset 'UTF-8'
-    filesMatching('plugin.yml') {
-        expand props
-    }
+tasks.named('shadowJar') {
+    archiveBaseName.set('NethrionRanks')
+    archiveVersion.set(project.version.toString())
+    archiveClassifier.set('')
+
+    // The original jar also carries its own plugin.yml/config.yml. Our project's
+    // own src/main/resources copies are added to the jar first, so keeping the
+    // first-seen copy (ours) and dropping the duplicate from the old jar mirrors
+    // what the Maven build's resource transformers do explicitly.
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.named('build') {
+    dependsOn tasks.named('shadowJar')
+}
+
+tasks.named('jar') {
+    // Don't produce the thin, unshaded jar as a build artifact
+    enabled = false
 }

@@ -1,7 +1,7 @@
 name: NethrionRanks
-version: '${version}'
+version: '1.1.0'
 main: com.nethrion.ranks.Main
-api-version: '1.21.11'
+api-version: '1.21'
 author: Nethrion
 description: Ranked progression, formal duels, permanent combat skills, custom Spear and base audit system.
 softdepend: [PlaceholderAPI, NethrionTeams]
@@ -15,6 +15,10 @@ commands:
   rank:
     description: Current rank, progression, ladder and admin tools
     usage: /rank | /rank list | /rank help | /rank set <player> <tier> [skill] | /rank giveweapon <player> <skill> <tier> | /rank removeweapon <player> [skill]
+
+  rankgui:
+    description: Open the NethrionRanks GUI panel
+    usage: /rankgui [player]
 
   skills:
     description: Permanent combat mastery and leaders
@@ -45,9 +49,10 @@ commands:
     usage: /kill set <username> <count>
 
   apply:
-    description: Apply for NationalMiner or request a rank exit
-    usage: /apply <miner|civilian>
+    description: Apply for specialized ranks (e.g. /apply miner)
+    usage: /apply <rank>
 
   requests:
-    description: Operator-only pending rank exit requests
-    usage: /requests | /requests approve <player> | /requests cancel <player>
+    description: Operator-only rank resignation requests review
+    usage: /requests [approve|deny|list] <player>
+    permission: nethrionranks.admin
